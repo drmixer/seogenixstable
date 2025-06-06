@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50;
+  }
+}
+
+@layer components {
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 to-secondary-600;
+  }
+  
+  .gradient-bg {
+    @apply bg-gradient-to-r from-primary-600 to-secondary-600;
+  }
+  
+  .gradient-border {
+    @apply border-transparent bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-border;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden border border-gray-100;
+  }
+  
+  .button-primary {
+    @apply gradient-bg text-white font-medium px-6 py-2 rounded-lg 
+           hover:opacity-90 transition-opacity duration-200
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2;
+  }
+  
+  .button-secondary {
+    @apply bg-white text-gray-700 font-medium px-6 py-2 rounded-lg border border-gray-200
+           hover:bg-gray-50 transition-colors duration-200
+           focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
+  }
+  
+  .input {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent
+           placeholder-gray-400;
+  }
+  
+  .nav-link {
+    @apply flex items-center px-4 py-2 text-gray-600 rounded-lg
+           hover:bg-gray-100 transition-colors duration-200;
+  }
+  
+  .nav-link.active {
+    @apply gradient-bg text-white;
+  }
+}
+
+/* Gradient animation */
+.animate-gradient {
+  background: linear-gradient(
+    270deg,
+    theme('colors.primary.600'),
+    theme('colors.secondary.600'),
+    theme('colors.primary.600')
+  );
+  background-size: 200% 200%;
+  animation: gradient 8s ease infinite;
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Glass effect */
+.glass {
+  @apply bg-white bg-opacity-70 backdrop-blur-lg;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded-full;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full hover:bg-gray-400 transition-colors;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  @apply w-6 h-6 border-2 border-gray-200 border-t-primary-600 rounded-full animate-spin;
+}
+
+/* Card hover effect */
+.card-hover {
+  @apply transition-all duration-300 hover:translate-y-[-4px];
+}
+
+/* Floating animation */
+.floating {
+  animation: floating 3s ease-in-out infinite;
+}
+
+@keyframes floating {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}

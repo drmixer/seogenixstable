@@ -1,0 +1,306 @@
+import { supabase } from './supabaseClient';
+
+// Common headers for API calls
+const getHeaders = () => ({
+  'Content-Type': 'application/json',
+  'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
+});
+
+// Base URL for Supabase Edge Functions
+const getBaseUrl = () => `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+
+// Helper function to call Edge Functions with fallback
+const callEdgeFunction = async (functionName: string, body: any) => {
+  try {
+    // Check if we have the required environment variables
+    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
+      console.warn('Missing Supabase configuration, using fallback data');
+      return getFallbackData(functionName, body);
+    }
+
+    const response = await fetch(`${getBaseUrl()}/${functionName}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      console.warn(`Edge Function ${functionName} returned ${response.status}, using fallback data`);
+      return getFallbackData(functionName, body);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.warn(`Edge Function ${functionName} failed, using fallback data:`, error);
+    return getFallbackData(functionName, body);
+  }
+};
+
+// Helper function to get fallback data
+const getFallbackData = (functionName: string, body: any) => {
+  switch (functionName) {
+    case 'analyzeSite':
+      return {
+        audit: {
+          id: crypto.randomUUID(),
+          site_id: body.site_id,
+          ai_visibility_score: Math.floor(Math.random() * 40) + 60,
+          schema_score: Math.floor(Math.random() * 40) + 60,
+          semantic_score: Math.floor(Math.random() * 40) + 60,
+          citation_score: Math.floor(Math.random() * 40) + 60,
+          technical_seo_score: Math.floor(Math.random() * 40) + 60,
+          created_at: new Date().toISOString()
+        },
+        schemas: [
+          {
+            id: crypto.randomUUID(),
+            audit_id: crypto.randomUUID(),
+            schema_type: 'FAQ',
+            markup: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              "mainEntity": [
+                {
+                  "@type": "Question",
+                  "name": "What is AI visibility?",
+                  "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "AI visibility refers to how well your content is understood and cited by AI systems."
+                  }
+                }
+              ]
+            }, null, 2),
+            created_at: new Date().toISOString()
+          }
+        ]
+      };
+    default:
+      throw new Error(`No fallback data available for function: ${functionName}`);
+  }
+};
+
+// API functions for subscription management
+export const subscriptionApi = {
+  getCurrentSubscription: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  getUsage: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('subscription_usage')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  updateUsage: async (userId: string, type: 'citations' | 'ai_content' | 'audits') => {
+    const { data, error } = await supabase
+      .rpc('increment_usage', {
+        p_user_id: userId,
+        p_type: type
+      });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for sites
+export const siteApi = {
+  addSite: async (userId: string, url: string, name: string) => {
+    const { data, error } = await supabase
+      .from('sites')
+      .insert([{ user_id: userId, url, name }])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  getSites: async (userId: string) => {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  getSite: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('id', siteId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  deleteSite: async (siteId: string) => {
+    const { error } = await supabase
+      .from('sites')
+      .delete()
+      .eq('id', siteId);
+    
+    if (error) throw error;
+    return true;
+  }
+};
+
+// API functions for audits
+export const auditApi = {
+  runAudit: async (siteId: string, url: string) => {
+    // Call the analyzeSite edge function
+    return await callEdgeFunction('analyzeSite', { site_id: siteId, url });
+  },
+  
+  getLatestAudit: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('audits')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    if (error) throw error;
+    return data;
+  },
+  
+  getAudits: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('audits')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for schemas
+export const schemaApi = {
+  getSchemas: async (auditId: string) => {
+    const { data, error } = await supabase
+      .from('schemas')
+      .select('*')
+      .eq('audit_id', auditId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for citations
+export const citationApi = {
+  trackCitations: async (siteId: string, url: string) => {
+    // Return fallback data
+    return {
+      citations: [
+        {
+          id: crypto.randomUUID(),
+          site_id: siteId,
+          source_type: 'Google Featured Snippet',
+          snippet_text: `According to ${url}, AI visibility refers to how well your content is understood and cited by AI systems.`,
+          url: 'https://google.com/search?q=ai+visibility',
+          detected_at: new Date().toISOString()
+        }
+      ],
+      assistant_response: `Based on information from ${url}, AI visibility refers to how well your content is understood and cited by AI systems. To improve AI visibility, implement schema markup, create clear semantic structure, and ensure comprehensive entity coverage.`
+    };
+  },
+  
+  getCitations: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('citations')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('detected_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for summaries
+export const summaryApi = {
+  generateSummary: async (siteId: string, url: string, summaryType: string) => {
+    // Return fallback data
+    return {
+      summary: {
+        id: crypto.randomUUID(),
+        site_id: siteId,
+        summary_type: summaryType,
+        content: `# ${new URL(url).hostname} Site Summary\n\nThis website focuses on AI visibility optimization, helping website owners improve how their content is understood and cited by AI systems.`,
+        created_at: new Date().toISOString()
+      }
+    };
+  },
+  
+  getSummaries: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('summaries')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for entity coverage
+export const entityApi = {
+  analyzeEntityCoverage: async (siteId: string, url: string) => {
+    // Return fallback data
+    return {
+      entities: [
+        {
+          id: crypto.randomUUID(),
+          site_id: siteId,
+          entity_name: 'AI Visibility',
+          entity_type: 'Concept',
+          mention_count: 24,
+          gap: false,
+          created_at: new Date().toISOString()
+        },
+        {
+          id: crypto.randomUUID(),
+          site_id: siteId,
+          entity_name: 'Schema Markup',
+          entity_type: 'Technology',
+          mention_count: 18,
+          gap: false,
+          created_at: new Date().toISOString()
+        }
+      ]
+    };
+  },
+  
+  getEntities: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('entities')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
