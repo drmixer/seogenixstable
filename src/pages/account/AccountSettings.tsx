@@ -37,7 +37,7 @@ const AccountSettings = () => {
           .from('subscriptions')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         if (subscriptionData) {
           // Calculate next billing date (30 days from subscription creation)
