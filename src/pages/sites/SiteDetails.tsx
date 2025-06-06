@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { siteApi, auditApi, schemaApi, citationApi, summaryApi, entityApi } from '../../lib/api';
+import { useSubscription } from '../../contexts/SubscriptionContext';
 import { motion } from 'framer-motion';
 import { RefreshCw, AlertCircle, Info, Copy, Check } from 'lucide-react';
 import AppLayout from '../../components/layout/AppLayout';
@@ -83,6 +84,7 @@ interface Entity {
 const SiteDetails = () => {
   const { siteId } = useParams<{ siteId: string }>();
   const navigate = useNavigate();
+  const { canRunAudit, getAuditFrequency } = useSubscription();
   
   const [site, setSite] = useState<Site | null>(null);
   const [audit, setAudit] = useState<Audit | null>(null);
@@ -165,6 +167,13 @@ const SiteDetails = () => {
 
   const runFullAudit = async () => {
     if (!site) return;
+
+    // Check if user can run an audit based on their plan
+    if (!canRunAudit()) {
+      const frequency = getAuditFrequency();
+      toast.error(`You can only run audits ${frequency}. Please wait for your next available audit.`);
+      return;
+    }
     
     setIsRunningAudit(true);
     setError('');

@@ -131,14 +131,36 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
       }
 
       try {
-        // In a real implementation, fetch the user's subscription and usage from your database
-        // For now, we'll default to the basic plan with no usage
-        setCurrentPlan(plans.basic);
-        setUsage({
-          citationsUsed: 0,
-          aiContentUsed: 0,
-          lastAuditDate: null,
-        });
+        // Fetch subscription and usage data
+        const { data: subscriptionData } = await supabase
+          .from('subscriptions')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        const { data: usageData } = await supabase
+          .from('subscription_usage')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        // Set current plan based on subscription data
+        if (subscriptionData?.plan_id) {
+          const planTier = subscriptionData.plan_id as PlanTier;
+          setCurrentPlan(plans[planTier]);
+        } else {
+          // Default to basic plan if no subscription found
+          setCurrentPlan(plans.basic);
+        }
+
+        // Set usage data
+        if (usageData) {
+          setUsage({
+            citationsUsed: usageData.citations_used,
+            aiContentUsed: usageData.ai_content_used,
+            lastAuditDate: usageData.last_audit_date ? new Date(usageData.last_audit_date) : null,
+          });
+        }
       } catch (error) {
         console.error('Error loading subscription:', error);
         // Default to basic plan on error
@@ -169,15 +191,15 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
 
     const now = new Date();
     const lastAudit = new Date(usage.lastAuditDate);
-    const daysSinceLastAudit = Math.floor((now.getTime() - lastAudit.getTime()) / (1000 * 60 * 60 * 24));
+    const hoursSinceLastAudit = Math.floor((now.getTime() - lastAudit.getTime()) / (1000 * 60 * 60));
 
     switch (currentPlan.limits.auditFrequency) {
       case 'daily':
-        return daysSinceLastAudit >= 1;
+        return hoursSinceLastAudit >= 24;
       case 'weekly':
-        return daysSinceLastAudit >= 7;
+        return hoursSinceLastAudit >= 168; // 7 days * 24 hours
       case 'monthly':
-        return daysSinceLastAudit >= 30;
+        return hoursSinceLastAudit >= 720; // 30 days * 24 hours
       default:
         return false;
     }
