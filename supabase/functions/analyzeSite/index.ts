@@ -27,6 +27,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 interface RequestBody {
   site_id: string;
   url: string;
+  user_id: string; // Add user_id to track usage
 }
 
 Deno.serve(async (req) => {
@@ -41,11 +42,11 @@ Deno.serve(async (req) => {
   try {
     // Parse the request body
     const body: RequestBody = await req.json();
-    const { site_id, url } = body;
+    const { site_id, url, user_id } = body;
 
-    if (!site_id || !url) {
+    if (!site_id || !url || !user_id) {
       return new Response(
-        JSON.stringify({ error: "Site ID and URL are required" }),
+        JSON.stringify({ error: "Site ID, URL, and User ID are required" }),
         {
           status: 400,
           headers: {
@@ -70,6 +71,19 @@ Deno.serve(async (req) => {
           },
         }
       );
+    }
+
+    // Track audit usage
+    const { data: usageData, error: usageError } = await supabase.rpc(
+      'increment_usage',
+      {
+        p_user_id: user_id,
+        p_type: 'audits'
+      }
+    );
+
+    if (usageError) {
+      throw new Error(`Failed to track usage: ${usageError.message}`);
     }
 
     // Call Gemini API with the correct model name

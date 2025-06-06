@@ -164,8 +164,16 @@ export const siteApi = {
 // API functions for audits
 export const auditApi = {
   runAudit: async (siteId: string, url: string) => {
-    // Call the analyzeSite edge function
-    return await callEdgeFunction('analyzeSite', { site_id: siteId, url });
+    // Get the current user's ID
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    // Call the analyzeSite edge function with user_id
+    return await callEdgeFunction('analyzeSite', { 
+      site_id: siteId, 
+      url,
+      user_id: user.id 
+    });
   },
   
   getLatestAudit: async (siteId: string) => {
