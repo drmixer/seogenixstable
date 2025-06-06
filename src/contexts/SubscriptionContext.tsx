@@ -136,13 +136,13 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
           .from('subscriptions')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         const { data: usageData } = await supabase
           .from('subscription_usage')
           .select('*')
           .eq('user_id', user.id)
-          .single();
+          .maybeSingle();
 
         // Set current plan based on subscription data
         if (subscriptionData?.plan_id) {
@@ -159,6 +159,13 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
             citationsUsed: usageData.citations_used,
             aiContentUsed: usageData.ai_content_used,
             lastAuditDate: usageData.last_audit_date ? new Date(usageData.last_audit_date) : null,
+          });
+        } else {
+          // If no usage data exists, initialize with default values
+          setUsage({
+            citationsUsed: 0,
+            aiContentUsed: 0,
+            lastAuditDate: null,
           });
         }
       } catch (error) {
