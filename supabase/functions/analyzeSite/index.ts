@@ -27,7 +27,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 interface RequestBody {
   site_id: string;
   url: string;
-  user_id: string; // Add user_id to track usage
+  user_id: string;
 }
 
 Deno.serve(async (req) => {
