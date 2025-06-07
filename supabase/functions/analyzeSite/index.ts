@@ -15,7 +15,8 @@ console.log("Environment check:", {
   supabaseUrl: !!supabaseUrl,
   supabaseServiceKey: !!supabaseServiceKey,
   deepseekApiKey: !!deepseekApiKey,
-  deepseekKeyLength: deepseekApiKey?.length || 0
+  deepseekKeyLength: deepseekApiKey?.length || 0,
+  deepseekKeyPrefix: deepseekApiKey?.substring(0, 10) + "..." || "none"
 });
 
 // Validate required environment variables
@@ -40,10 +41,19 @@ interface RequestBody {
 // Function to fetch and analyze website content
 async function fetchWebsiteContent(url: string): Promise<string> {
   try {
+    console.log(`Fetching content from: ${url}`);
+    
     const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SEOgenix-Bot/1.0)'
-      }
+        'User-Agent': 'Mozilla/5.0 (compatible; SEOgenix-Bot/1.0; +https://seogemix.com/bot)',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+      },
+      signal: AbortSignal.timeout(10000) // 10 second timeout
     });
     
     if (!response.ok) {
@@ -51,39 +61,68 @@ async function fetchWebsiteContent(url: string): Promise<string> {
     }
     
     const html = await response.text();
+    console.log(`Fetched ${html.length} characters of HTML content`);
     
     // Extract text content and basic structure info
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim() : '';
+    const title = titleMatch ? titleMatch[1].trim() : 'No title found';
     
     const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
-    const metaDescription = metaDescMatch ? metaDescMatch[1].trim() : '';
+    const metaDescription = metaDescMatch ? metaDescMatch[1].trim() : 'No meta description found';
     
     // Check for schema markup
     const hasJsonLd = html.includes('application/ld+json');
+    const jsonLdCount = (html.match(/application\/ld\+json/g) || []).length;
     const hasMicrodata = html.includes('itemscope') || html.includes('itemtype');
     const hasOpenGraph = html.includes('og:');
+    const hasTwitterCard = html.includes('twitter:');
     
     // Extract headings
     const headings = html.match(/<h[1-6][^>]*>([^<]+)<\/h[1-6]>/gi) || [];
+    const headingStructure = headings.slice(0, 10).map(h => h.replace(/<[^>]*>/g, '').trim()).filter(h => h.length > 0);
     
     // Basic content analysis
-    const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).length;
+    const textContent = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                           .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                           .replace(/<[^>]*>/g, ' ')
+                           .replace(/\s+/g, ' ')
+                           .trim();
+    
+    const wordCount = textContent.split(/\s+/).filter(word => word.length > 0).length;
+    
+    // Check for common AI-friendly elements
+    const hasFAQ = html.toLowerCase().includes('faq') || html.toLowerCase().includes('frequently asked');
+    const hasStructuredContent = headings.length > 3;
+    const hasGoodLength = wordCount > 300;
     
     return `
-Website: ${url}
+Website Analysis for: ${url}
 Title: ${title}
 Meta Description: ${metaDescription}
-Word Count: ~${wordCount}
-Has JSON-LD Schema: ${hasJsonLd}
-Has Microdata: ${hasMicrodata}
-Has Open Graph: ${hasOpenGraph}
-Number of Headings: ${headings.length}
-Sample Headings: ${headings.slice(0, 5).map(h => h.replace(/<[^>]*>/g, '')).join(', ')}
+Word Count: ${wordCount}
+Content Quality: ${hasGoodLength ? 'Good length' : 'Short content'}
+
+Schema & Structured Data:
+- JSON-LD Scripts: ${jsonLdCount}
+- Has Microdata: ${hasMicrodata}
+- Has Open Graph: ${hasOpenGraph}
+- Has Twitter Cards: ${hasTwitterCard}
+
+Content Structure:
+- Number of Headings: ${headings.length}
+- Has FAQ Section: ${hasFAQ}
+- Well Structured: ${hasStructuredContent}
+- Heading Examples: ${headingStructure.slice(0, 5).join(' | ')}
+
+AI Readiness Indicators:
+- Structured Data Present: ${hasJsonLd || hasMicrodata}
+- Clear Content Hierarchy: ${hasStructuredContent}
+- Sufficient Content Length: ${hasGoodLength}
+- FAQ or Q&A Content: ${hasFAQ}
     `.trim();
   } catch (error) {
     console.error("Error fetching website:", error);
-    return `Unable to fetch content from ${url}. Error: ${error.message}`;
+    return `Unable to fetch content from ${url}. Error: ${error.message}. This may affect the accuracy of the analysis.`;
   }
 }
 
@@ -95,96 +134,133 @@ async function analyzeWithDeepSeek(url: string, websiteContent: string): Promise
 
   console.log("Calling DeepSeek API for analysis...");
   
-  const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${deepseekApiKey}`
-    },
-    body: JSON.stringify({
-      model: "deepseek-chat",
-      messages: [
-        {
-          role: "system",
-          content: "You are an AI visibility expert who analyzes websites for their compatibility with AI systems like ChatGPT, voice assistants, and other AI tools. You provide detailed, actionable analysis."
-        },
-        {
-          role: "user",
-          content: `Analyze this website for AI visibility optimization:
+  try {
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${deepseekApiKey}`,
+        "User-Agent": "SEOgenix/1.0"
+      },
+      body: JSON.stringify({
+        model: "deepseek-chat",
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert AI visibility consultant who analyzes websites for their compatibility with AI systems like ChatGPT, Claude, Perplexity, voice assistants, and other AI tools. You provide detailed, actionable analysis with specific scores and recommendations."
+          },
+          {
+            role: "user",
+            content: `Analyze this website for AI visibility optimization:
 
 ${websiteContent}
 
-Please provide scores (0-100) for these 5 categories and detailed analysis:
+Based on the actual content and structure provided, give me precise scores (0-100) for these 5 categories:
 
-1. AI Visibility Score: How well can AI systems understand and process the content
-2. Schema Score: Quality and coverage of structured data markup  
-3. Semantic Score: Clarity of content organization and entity relationships
-4. Citation Score: Likelihood of being cited by AI systems
-5. Technical SEO Score: Basic SEO factors that affect AI crawling
+1. AI Visibility Score: Overall readiness for AI systems to understand and cite this content
+2. Schema Score: Quality and coverage of structured data markup (JSON-LD, microdata, etc.)
+3. Semantic Score: Content organization, heading structure, and semantic clarity
+4. Citation Score: Likelihood of being cited by AI systems based on content quality and authority signals
+5. Technical SEO Score: Basic technical factors that affect AI crawling and understanding
 
-For each score, consider the actual content, structure, and markup present. Provide specific recommendations for improvement.
+Be specific about what you observed in the content. If schema markup is missing, score it low. If content is well-structured with clear headings, score semantic high.
 
-Return your response in this exact JSON format:
+Return ONLY a valid JSON response in this exact format:
 {
   "ai_visibility_score": 75,
   "schema_score": 60,
   "semantic_score": 80,
   "citation_score": 65,
   "technical_seo_score": 70,
-  "analysis": "Detailed analysis with specific recommendations for each area",
+  "analysis": "Detailed analysis explaining each score based on what was actually found in the content",
   "recommendations": [
     "Specific actionable recommendation 1",
-    "Specific actionable recommendation 2",
+    "Specific actionable recommendation 2", 
     "Specific actionable recommendation 3"
   ]
 }`
+          }
+        ],
+        max_tokens: 2000,
+        temperature: 0.1,
+        top_p: 0.9
+      }),
+      signal: AbortSignal.timeout(30000) // 30 second timeout
+    });
+
+    console.log(`DeepSeek API response status: ${response.status}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("DeepSeek API error response:", errorText);
+      throw new Error(`DeepSeek API error (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log("DeepSeek API response received successfully");
+    
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      throw new Error("Invalid response structure from DeepSeek API");
+    }
+    
+    const content = data.choices[0].message.content;
+    console.log("DeepSeek response content length:", content.length);
+    
+    // Try to extract JSON from the response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.error("No JSON found in response:", content);
+      throw new Error("No valid JSON found in DeepSeek response");
+    }
+    
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      
+      // Validate the parsed response has required fields
+      const requiredFields = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
+      for (const field of requiredFields) {
+        if (typeof parsed[field] !== 'number') {
+          throw new Error(`Missing or invalid ${field} in response`);
         }
-      ],
-      max_tokens: 2000,
-      temperature: 0.3
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("DeepSeek API error response:", errorText);
-    throw new Error(`DeepSeek API error (${response.status}): ${errorText}`);
-  }
-
-  const data = await response.json();
-  console.log("DeepSeek API response received");
-  
-  const content = data.choices[0].message.content;
-  
-  // Try to extract JSON from the response
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("No valid JSON found in DeepSeek response");
-  }
-  
-  try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    console.log("Successfully parsed DeepSeek analysis");
-    return parsed;
-  } catch (parseError) {
-    console.error("Failed to parse DeepSeek JSON:", parseError);
-    throw new Error("Invalid JSON format in DeepSeek response");
+      }
+      
+      console.log("✅ Successfully parsed and validated DeepSeek analysis");
+      console.log("Scores:", {
+        ai_visibility: parsed.ai_visibility_score,
+        schema: parsed.schema_score,
+        semantic: parsed.semantic_score,
+        citation: parsed.citation_score,
+        technical: parsed.technical_seo_score
+      });
+      
+      return parsed;
+    } catch (parseError) {
+      console.error("Failed to parse DeepSeek JSON:", parseError);
+      console.error("Raw content:", content);
+      throw new Error(`Invalid JSON format in DeepSeek response: ${parseError.message}`);
+    }
+  } catch (error) {
+    console.error("DeepSeek API call failed:", error);
+    throw error;
   }
 }
 
 // Mock data fallback (only used when DeepSeek fails)
 const getMockAnalysis = (url: string) => {
+  const baseScore = Math.floor(Math.random() * 20) + 60; // 60-80 base
   return {
-    ai_visibility_score: Math.floor(Math.random() * 30) + 70,
-    schema_score: Math.floor(Math.random() * 30) + 65,
-    semantic_score: Math.floor(Math.random() * 30) + 75,
-    citation_score: Math.floor(Math.random() * 30) + 60,
-    technical_seo_score: Math.floor(Math.random() * 30) + 70,
-    analysis: `Mock analysis for ${url}: This website shows good potential for AI visibility with some areas for improvement in schema markup and citation optimization. (Note: This is mock data - DeepSeek API failed)`,
+    ai_visibility_score: Math.min(100, baseScore + Math.floor(Math.random() * 15)),
+    schema_score: Math.min(100, baseScore - 10 + Math.floor(Math.random() * 20)),
+    semantic_score: Math.min(100, baseScore + 5 + Math.floor(Math.random() * 15)),
+    citation_score: Math.min(100, baseScore - 5 + Math.floor(Math.random() * 20)),
+    technical_seo_score: Math.min(100, baseScore + Math.floor(Math.random() * 15)),
+    analysis: `Mock analysis for ${url}: This website shows potential for AI visibility optimization. The analysis indicates areas for improvement in schema markup implementation and content structure optimization. Note: This is fallback data because the DeepSeek API was not available or failed to respond.`,
     recommendations: [
-      "Add structured data markup using schema.org",
-      "Improve content organization with clear headings",
-      "Optimize for voice search queries"
+      "Implement comprehensive schema.org structured data markup",
+      "Improve content organization with clear semantic headings (H1, H2, H3)",
+      "Add FAQ sections to address common user questions",
+      "Optimize content for voice search and natural language queries",
+      "Ensure fast loading times and mobile responsiveness"
     ]
   };
 };
@@ -203,6 +279,8 @@ Deno.serve(async (req) => {
     const body: RequestBody = await req.json();
     const { site_id, url, user_id } = body;
 
+    console.log(`🚀 Starting analysis for site ${site_id}, URL: ${url}, User: ${user_id}`);
+
     if (!site_id || !url || !user_id) {
       return new Response(
         JSON.stringify({ error: "Site ID, URL, and User ID are required" }),
@@ -218,7 +296,8 @@ Deno.serve(async (req) => {
 
     // Validate URL
     try {
-      new URL(url);
+      const urlObj = new URL(url);
+      console.log(`Analyzing URL: ${urlObj.href}`);
     } catch {
       return new Response(
         JSON.stringify({ error: "Invalid URL format" }),
@@ -232,36 +311,40 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Starting analysis for ${url}`);
-
     let scores;
     let analysisText = "";
     let usingRealData = false;
+    let dataSource = "Mock Data";
 
     // Try to get real analysis from DeepSeek
-    if (deepseekApiKey) {
+    if (deepseekApiKey && deepseekApiKey.length > 10) {
       try {
-        console.log("Fetching website content...");
+        console.log("🌐 Fetching website content...");
         const websiteContent = await fetchWebsiteContent(url);
         
-        console.log("Analyzing with DeepSeek...");
+        console.log("🤖 Analyzing with DeepSeek API...");
         scores = await analyzeWithDeepSeek(url, websiteContent);
         analysisText = scores.analysis;
         usingRealData = true;
+        dataSource = "DeepSeek API";
         
         console.log("✅ Successfully got real analysis from DeepSeek API");
       } catch (apiError) {
         console.error("❌ DeepSeek API failed:", apiError.message);
         scores = getMockAnalysis(url);
-        analysisText = scores.analysis;
+        analysisText = scores.analysis + ` (DeepSeek API Error: ${apiError.message})`;
         usingRealData = false;
+        dataSource = "Mock Data (API Failed)";
       }
     } else {
-      console.log("❌ No DeepSeek API key configured, using mock data");
+      console.log("❌ No valid DeepSeek API key configured, using mock data");
       scores = getMockAnalysis(url);
       analysisText = scores.analysis;
       usingRealData = false;
+      dataSource = "Mock Data (No API Key)";
     }
+
+    console.log(`📊 Analysis complete. Using: ${dataSource}`);
 
     // Create audit with service role client
     const { data: auditData, error: auditError } = await supabase
@@ -278,8 +361,11 @@ Deno.serve(async (req) => {
       .single();
 
     if (auditError) {
+      console.error("Database error creating audit:", auditError);
       throw new Error(`Failed to create audit: ${auditError.message}`);
     }
+
+    console.log(`💾 Audit saved with ID: ${auditData.id}`);
 
     // Generate schemas with service role client
     const schemaTypes = ["FAQ", "HowTo", "Product"];
@@ -297,22 +383,29 @@ Deno.serve(async (req) => {
         .single();
 
       if (schemaError) {
-        console.error(`Failed to create schema: ${schemaError.message}`);
+        console.error(`Failed to create ${schemaType} schema:`, schemaError.message);
         continue;
       }
 
       schemas.push(schemaData);
     }
 
+    console.log(`📋 Generated ${schemas.length} schema examples`);
+
+    const response = {
+      audit: auditData,
+      schemas,
+      analysis: analysisText,
+      recommendations: scores.recommendations || [],
+      usingRealData,
+      dataSource,
+      timestamp: new Date().toISOString()
+    };
+
+    console.log("🎉 Analysis complete and successful");
+
     return new Response(
-      JSON.stringify({
-        audit: auditData,
-        schemas,
-        analysis: analysisText,
-        recommendations: scores.recommendations || [],
-        usingRealData,
-        dataSource: usingRealData ? "DeepSeek API" : "Mock Data"
-      }),
+      JSON.stringify(response),
       {
         status: 200,
         headers: {
@@ -322,12 +415,13 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error("Error in analyzeSite function:", error);
+    console.error("💥 Error in analyzeSite function:", error);
     
     return new Response(
       JSON.stringify({ 
         error: "Failed to analyze site",
-        details: error instanceof Error ? error.message : String(error)
+        details: error instanceof Error ? error.message : String(error),
+        timestamp: new Date().toISOString()
       }),
       {
         status: 500,
@@ -342,6 +436,8 @@ Deno.serve(async (req) => {
 
 // Helper function to generate dummy schema markup
 function generateDummySchema(schemaType: string, url: string): string {
+  const domain = new URL(url).hostname;
+  
   switch (schemaType) {
     case "FAQ":
       return JSON.stringify({
@@ -350,68 +446,124 @@ function generateDummySchema(schemaType: string, url: string): string {
         "mainEntity": [
           {
             "@type": "Question",
-            "name": "What is AI visibility?",
+            "name": "What is AI visibility optimization?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "AI visibility refers to how well your content is understood and cited by AI systems like ChatGPT and voice assistants."
+              "text": "AI visibility optimization is the process of making your content more discoverable and understandable to AI systems like ChatGPT, voice assistants, and search engines."
             }
           },
           {
             "@type": "Question",
-            "name": "How can I improve my AI visibility?",
+            "name": "How can I improve my website's AI visibility?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "You can improve your AI visibility by implementing schema markup, creating clear content structure, and ensuring comprehensive entity coverage."
+              "text": "You can improve AI visibility by implementing schema markup, creating clear content structure, optimizing for voice search, and ensuring your content directly answers common questions."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Why is structured data important for AI systems?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Structured data helps AI systems understand the context, relationships, and meaning of your content, making it more likely to be cited and referenced accurately."
             }
           }
         ]
       }, null, 2);
+      
     case "HowTo":
       return JSON.stringify({
         "@context": "https://schema.org",
         "@type": "HowTo",
-        "name": "How to Improve Your Website's AI Visibility",
-        "description": "Follow these steps to enhance your content's visibility to AI systems.",
+        "name": "How to Optimize Your Website for AI Visibility",
+        "description": "A comprehensive guide to improving your content's visibility and understanding by AI systems.",
+        "image": `${url}/ai-optimization-guide.jpg`,
+        "totalTime": "PT30M",
+        "estimatedCost": {
+          "@type": "MonetaryAmount",
+          "currency": "USD",
+          "value": "0"
+        },
         "step": [
           {
             "@type": "HowToStep",
-            "name": "Implement schema markup",
-            "text": "Add appropriate schema.org structured data to your content."
+            "name": "Implement Schema Markup",
+            "text": "Add structured data using schema.org vocabulary to help AI systems understand your content structure and meaning.",
+            "image": `${url}/schema-markup.jpg`
           },
           {
             "@type": "HowToStep",
-            "name": "Create clear content structure",
-            "text": "Use proper headings and semantic HTML to organize your content."
+            "name": "Optimize Content Structure",
+            "text": "Use clear headings (H1, H2, H3) and organize content logically to improve semantic understanding.",
+            "image": `${url}/content-structure.jpg`
           },
           {
             "@type": "HowToStep",
-            "name": "Optimize entity coverage",
-            "text": "Ensure comprehensive coverage of key entities related to your topic."
+            "name": "Create FAQ Sections",
+            "text": "Add frequently asked questions that directly answer common queries in your industry or niche.",
+            "image": `${url}/faq-section.jpg`
+          },
+          {
+            "@type": "HowToStep",
+            "name": "Optimize for Voice Search",
+            "text": "Include natural language patterns and conversational keywords that match how people speak to AI assistants.",
+            "image": `${url}/voice-search.jpg`
           }
         ]
       }, null, 2);
+      
     case "Product":
       return JSON.stringify({
         "@context": "https://schema.org",
         "@type": "Product",
         "name": "AI Visibility Optimization Service",
-        "description": "Professional service to improve your content's visibility to AI systems.",
+        "description": "Professional service to enhance your website's visibility and understanding by AI systems including ChatGPT, voice assistants, and search engines.",
         "brand": {
           "@type": "Brand",
-          "name": "SEOgenix"
+          "name": domain
         },
+        "category": "SEO Services",
         "offers": {
           "@type": "Offer",
-          "price": "99.00",
+          "price": "299.00",
           "priceCurrency": "USD",
-          "availability": "https://schema.org/InStock"
-        }
+          "availability": "https://schema.org/InStock",
+          "priceValidUntil": "2025-12-31",
+          "seller": {
+            "@type": "Organization",
+            "name": domain
+          }
+        },
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.8",
+          "reviewCount": "127",
+          "bestRating": "5",
+          "worstRating": "1"
+        },
+        "review": [
+          {
+            "@type": "Review",
+            "reviewRating": {
+              "@type": "Rating",
+              "ratingValue": "5"
+            },
+            "author": {
+              "@type": "Person",
+              "name": "Sarah Johnson"
+            },
+            "reviewBody": "Excellent service that significantly improved our content's AI visibility. Highly recommended!"
+          }
+        ]
       }, null, 2);
+      
     default:
       return JSON.stringify({
         "@context": "https://schema.org",
         "@type": "WebPage",
-        "url": url
+        "url": url,
+        "name": "AI Visibility Optimized Page",
+        "description": "A webpage optimized for AI system understanding and visibility."
       }, null, 2);
   }
 }
