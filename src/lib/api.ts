@@ -351,58 +351,200 @@ const generateSchemaFallback = (body: any) => {
 };
 
 const generateContentFallback = (body: any) => {
-  const { topic, contentType } = body;
+  const { topic, content_type, industry, target_audience, tone } = body;
+  
+  const audienceContext = target_audience || 'users';
+  const industryContext = industry || 'your industry';
+  const toneStyle = tone || 'professional';
   
   const contentExamples = {
-    blogOutline: `# ${topic}: A Complete Guide
+    blogOutline: `# ${topic}: A Complete Guide for ${audienceContext}
 
 ## Introduction
-- Understanding ${topic}
+- Understanding ${topic} in the context of ${industryContext}
 - Why ${topic} matters in 2025
-- Key benefits and applications
+- Key benefits and applications for ${audienceContext}
 
 ## Main Content Sections
 1. Getting Started with ${topic}
-2. Best Practices and Strategies
+   - Prerequisites and requirements
+   - Initial setup and configuration
+   - Best practices for beginners
+
+2. Advanced ${topic} Strategies
+   - Professional techniques and methodologies
+   - Industry-specific applications
+   - Optimization and performance tips
+
 3. Common Challenges and Solutions
-4. Advanced Techniques
-5. Future Trends and Developments
+   - Typical obstacles faced by ${audienceContext}
+   - Proven solutions and workarounds
+   - Expert recommendations
+
+4. Implementation Guide
+   - Step-by-step process
+   - Tools and resources needed
+   - Timeline and milestones
+
+5. Measuring Success
+   - Key performance indicators
+   - Tracking and analytics
+   - ROI calculation methods
+
+6. Future Trends and Developments
+   - Emerging technologies and approaches
+   - Industry predictions
+   - Preparing for what's next
+
+## Frequently Asked Questions
+- What is the cost of implementing ${topic}?
+- How long does it take to see results?
+- What are the main challenges?
+- How does it compare to alternatives?
 
 ## Conclusion
 - Key takeaways about ${topic}
 - Next steps for implementation
-- Additional resources`,
+- Additional resources and support`,
 
     faqSection: `## Frequently Asked Questions About ${topic}
 
 ### What is ${topic}?
-${topic} is an important concept that helps businesses and individuals achieve their goals through strategic implementation and best practices.
+${topic} is a comprehensive approach that helps ${audienceContext} in ${industryContext} achieve better results through strategic implementation and best practices. It combines proven methodologies with modern tools to deliver measurable outcomes.
 
 ### How can I get started with ${topic}?
-Getting started with ${topic} involves understanding the fundamentals, identifying your specific needs, and implementing a structured approach.
+Getting started with ${topic} involves understanding the fundamentals, assessing your current situation, and implementing a structured approach. We recommend beginning with a consultation to identify your specific needs and goals.
 
-### What are the benefits of ${topic}?
-The main benefits include improved efficiency, better results, and enhanced performance in your specific area of focus.
+### What are the benefits of ${topic} for ${audienceContext}?
+The main benefits include improved efficiency, better ROI, enhanced performance, and competitive advantage. Most ${audienceContext} see significant improvements within the first few months of proper implementation.
 
 ### How long does it take to see results with ${topic}?
-Results can vary depending on your specific situation, but most people see initial improvements within a few weeks of proper implementation.`,
+Results can vary depending on your specific situation and implementation approach, but most ${audienceContext} see initial improvements within 2-4 weeks, with substantial results typically achieved within 3-6 months.
 
-    metaDescription: `Learn everything about ${topic} with our comprehensive guide. Discover best practices, strategies, and expert tips to help you succeed. Get started today!`,
+### What are the costs involved with ${topic}?
+Costs vary based on scope, complexity, and specific requirements. We offer flexible pricing options to accommodate different budgets and provide excellent value for the investment.
 
-    productDescription: `Discover our premium ${topic} solution designed to meet your specific needs. Our comprehensive approach ensures you get the best results with expert support and proven strategies.`,
+### Can ${topic} be customized for my specific needs in ${industryContext}?
+Absolutely! ${topic} is highly adaptable and can be tailored to meet the unique requirements of ${audienceContext} in ${industryContext}. We work closely with clients to ensure the solution fits their specific context.
 
-    socialPost: `🚀 Excited to share insights about ${topic}! 
+### What support is available for ${topic} implementation?
+We provide comprehensive support including initial consultation, implementation guidance, training, and ongoing assistance. Our team of experts is committed to your success throughout the entire process.`,
 
-Key benefits:
-✅ Improved efficiency
-✅ Better results
-✅ Expert guidance
+    metaDescription: `Discover how ${topic} can transform your ${industryContext} strategy. Expert guidance for ${audienceContext}, proven results, and comprehensive support. Get started today and see the difference!`,
 
-Ready to get started? Let's connect! #${topic.replace(/\s+/g, '')} #Success`
+    productDescription: `# Transform Your ${industryContext} with Professional ${topic} Solutions
+
+## Designed Specifically for ${audienceContext}
+
+Our comprehensive ${topic} solution is engineered to deliver exceptional results for ${audienceContext} in the ${industryContext} sector. With years of expertise and proven methodologies, we help you achieve your goals faster and more efficiently.
+
+### Key Features:
+• **Comprehensive Approach**: End-to-end solution covering all aspects of ${topic}
+• **Expert Guidance**: Access to industry specialists and best practices
+• **Proven Results**: Track record of success with measurable outcomes
+• **Scalable Solution**: Grows with your business needs and requirements
+• **Dedicated Support**: Ongoing assistance and optimization
+
+### Benefits You'll Experience:
+• Improved efficiency and productivity
+• Reduced costs and better ROI
+• Enhanced competitive advantage
+• Streamlined processes and workflows
+• Better decision-making capabilities
+
+### Why Choose Our ${topic} Solution?
+With a ${toneStyle} approach and deep understanding of ${industryContext} challenges, we deliver solutions that work. Our clients typically see 30-50% improvement in key metrics within the first quarter.
+
+**Ready to get started?** Contact our team today for a personalized consultation and discover how ${topic} can transform your business.`,
+
+    socialPost: `🚀 Excited to share insights about ${topic} for ${audienceContext} in ${industryContext}! 
+
+Key benefits we're seeing:
+✅ Improved efficiency and performance
+✅ Better ROI and measurable results
+✅ Enhanced competitive advantage
+✅ Streamlined processes
+
+The impact on ${industryContext} has been remarkable. What's your experience with ${topic}? 
+
+Ready to learn more? Let's connect! #${topic.replace(/\s+/g, '')} #${industryContext.replace(/\s+/g, '')} #Success`,
+
+    emailNewsletter: `**Subject: Transform Your ${industryContext} Results with ${topic}**
+
+Hi there!
+
+Hope you're having a great week! I wanted to share some exciting developments in the ${topic} space that I think you'll find valuable as ${audienceContext} in ${industryContext}.
+
+**This Week's Spotlight: ${topic} Success Stories**
+
+We've been tracking some incredible results from ${audienceContext} who've implemented ${topic} strategies:
+• 35% average improvement in efficiency
+• 28% reduction in operational costs
+• 42% increase in customer satisfaction
+
+**Quick Tip:**
+When implementing ${topic}, start with a clear strategy and measurable goals. This approach ensures you can track progress and optimize for better results.
+
+**What's Next?**
+Ready to explore how ${topic} can benefit your specific situation? Reply to this email or schedule a consultation. We'd love to help you achieve similar results.
+
+Best regards,
+[Your Name]`,
+
+    landingPageCopy: `# Transform Your ${industryContext} Results with ${topic}
+
+## Finally, a solution designed specifically for ${audienceContext}
+
+Stop struggling with outdated approaches. Our comprehensive ${topic} solution delivers the results you need with the support you deserve.
+
+### The Challenge You're Facing
+As ${audienceContext} in ${industryContext}, you're dealing with increasing competition, complex challenges, and the need for measurable results.
+
+### Our Solution
+We've helped hundreds of ${audienceContext} overcome these exact challenges with our proven ${topic} methodology.
+
+### What Makes Us Different:
+✅ Proven track record with 95% client satisfaction
+✅ Industry expertise in ${industryContext}
+✅ Comprehensive support from strategy to implementation
+✅ Measurable results with average 40% improvement
+
+### Ready to Get Started?
+Join successful ${audienceContext} who've transformed their results with our ${topic} solution.
+
+**[Get Your Free Consultation Today]**`,
+
+    pressRelease: `FOR IMMEDIATE RELEASE
+
+**Revolutionary ${topic} Solution Launches for ${industryContext}**
+*New approach helps ${audienceContext} achieve unprecedented results*
+
+[City, Date] - Today marks the launch of an innovative ${topic} solution specifically designed for ${audienceContext} in ${industryContext}. This breakthrough approach addresses long-standing challenges and delivers measurable improvements.
+
+**Industry-Changing Innovation**
+The new ${topic} methodology combines cutting-edge approaches with proven strategies to deliver results that were previously unattainable.
+
+"This represents a fundamental shift in how ${audienceContext} approach ${topic}," said [Spokesperson]. "We've created something truly transformative for ${industryContext}."
+
+**Proven Results**
+Early adopters have reported remarkable outcomes:
+• 45% improvement in operational efficiency
+• 32% reduction in implementation time
+• 38% increase in satisfaction scores
+
+**About [Company]**
+[Company] is a leading provider of innovative solutions for ${industryContext}, committed to helping ${audienceContext} achieve their goals.
+
+For more information, visit [website] or contact [contact information].`
   };
 
+  const content = contentExamples[content_type as keyof typeof contentExamples] || contentExamples.blogOutline;
+  
   return {
-    content: contentExamples[contentType as keyof typeof contentExamples] || contentExamples.blogOutline
+    content,
+    dataSource: "Enhanced Template",
+    wordCount: content.split(/\s+/).length,
+    timestamp: new Date().toISOString()
   };
 };
 
@@ -649,11 +791,57 @@ export const schemaApi = {
   }
 };
 
-// API functions for content generation
+// API functions for content generation - ENHANCED
 export const contentApi = {
-  generateContent: async (topic: string, contentType: string) => {
-    // Use fallback data directly instead of calling non-existent edge function
-    return generateContentFallback({ topic, contentType });
+  generateContent: async (
+    topic: string, 
+    contentType: string,
+    industry?: string,
+    targetAudience?: string,
+    tone?: string,
+    length?: string,
+    siteUrl?: string
+  ) => {
+    console.log('🚀 Starting enhanced content generation...');
+    console.log(`📋 Topic: ${topic}`);
+    console.log(`📄 Content Type: ${contentType}`);
+    console.log(`🏭 Industry: ${industry || 'Not specified'}`);
+    
+    try {
+      // Get the current user's ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Call the generateContent edge function
+      const result = await callEdgeFunction('generateContent', { 
+        topic,
+        content_type: contentType,
+        industry,
+        target_audience: targetAudience,
+        tone,
+        length,
+        site_url: siteUrl,
+        user_id: user.id
+      });
+      
+      console.log('✅ Enhanced content generation completed!');
+      console.log(`📊 Data source: ${result.dataSource || 'Edge Function'}`);
+      console.log(`📊 Word count: ${result.wordCount || 'Unknown'}`);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Content generation failed:', error);
+      console.log('🔄 Falling back to enhanced template...');
+      
+      // Return enhanced fallback data if edge function fails
+      return generateContentFallback({ 
+        topic, 
+        content_type: contentType,
+        industry,
+        target_audience: targetAudience,
+        tone
+      });
+    }
   }
 };
 
