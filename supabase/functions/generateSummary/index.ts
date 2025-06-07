@@ -65,7 +65,6 @@ async function fetchWebsiteContent(url: string): Promise<string> {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SEOgenix-Bot/1.0; +https://seogemix.com/bot)',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
       },
       signal: AbortSignal.timeout(15000) // 15 second timeout
     });
