@@ -193,33 +193,43 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
     return currentPlan?.limits.auditFrequency || 'monthly';
   };
 
+  // DISABLED FOR TESTING: Always allow audits
   const canRunAudit = (): boolean => {
-    if (!currentPlan || !usage.lastAuditDate) return true;
-
-    const now = new Date();
-    const lastAudit = new Date(usage.lastAuditDate);
-    const hoursSinceLastAudit = Math.floor((now.getTime() - lastAudit.getTime()) / (1000 * 60 * 60));
-
-    switch (currentPlan.limits.auditFrequency) {
-      case 'daily':
-        return hoursSinceLastAudit >= 24;
-      case 'weekly':
-        return hoursSinceLastAudit >= 168; // 7 days * 24 hours
-      case 'monthly':
-        return hoursSinceLastAudit >= 720; // 30 days * 24 hours
-      default:
-        return false;
-    }
+    return true; // Disabled limits for testing
+    
+    // Original logic (commented out):
+    // if (!currentPlan || !usage.lastAuditDate) return true;
+    // const now = new Date();
+    // const lastAudit = new Date(usage.lastAuditDate);
+    // const hoursSinceLastAudit = Math.floor((now.getTime() - lastAudit.getTime()) / (1000 * 60 * 60));
+    // switch (currentPlan.limits.auditFrequency) {
+    //   case 'daily':
+    //     return hoursSinceLastAudit >= 24;
+    //   case 'weekly':
+    //     return hoursSinceLastAudit >= 168; // 7 days * 24 hours
+    //   case 'monthly':
+    //     return hoursSinceLastAudit >= 720; // 30 days * 24 hours
+    //   default:
+    //     return false;
+    // }
   };
 
+  // DISABLED FOR TESTING: Always allow content generation
   const canGenerateContent = (): boolean => {
-    if (!currentPlan) return false;
-    return usage.aiContentUsed < currentPlan.limits.aiContentGenerations;
+    return true; // Disabled limits for testing
+    
+    // Original logic (commented out):
+    // if (!currentPlan) return false;
+    // return usage.aiContentUsed < currentPlan.limits.aiContentGenerations;
   };
 
+  // DISABLED FOR TESTING: Always allow citation tracking
   const canTrackMoreCitations = (): boolean => {
-    if (!currentPlan) return false;
-    return usage.citationsUsed < currentPlan.limits.citationsPerMonth;
+    return true; // Disabled limits for testing
+    
+    // Original logic (commented out):
+    // if (!currentPlan) return false;
+    // return usage.citationsUsed < currentPlan.limits.citationsPerMonth;
   };
 
   return (
