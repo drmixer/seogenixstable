@@ -199,30 +199,27 @@ Write as technical overview in 400-500 words.`
       })
     })
 
-    // Check if response is ok and has proper content type
+    // Read the response text once and store it
+    const responseText = await response.text()
+
+    // Check if response is ok
     if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
+      console.error(`❌ Gemini API HTTP error ${response.status}:`, responseText)
+      throw new Error(`Gemini API error: ${response.status} - ${responseText}`)
     }
 
-    // Check content type before parsing JSON
+    // Check content type
     const contentType = response.headers.get('content-type')
     if (!contentType || !contentType.includes('application/json')) {
-      const responseText = await response.text()
       console.error('❌ Gemini API returned non-JSON response:', responseText)
       throw new Error(`Gemini API returned unexpected content type: ${contentType}`)
     }
 
-    // Get the response text once and store it
-    const responseText = await response.text()
-    
     let data
     try {
-      // Try to parse as JSON using the stored response text
+      // Parse JSON using the stored response text
       data = JSON.parse(responseText)
     } catch (jsonError) {
-      // If JSON parsing fails, use the already stored response text for debugging
       const snippet = responseText.substring(0, 200) + (responseText.length > 200 ? '...' : '')
       console.error('❌ Failed to parse Gemini API response as JSON:', jsonError)
       console.error('❌ Response snippet:', snippet)
