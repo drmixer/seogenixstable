@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FileBarChart, Copy, Check, RefreshCw, Download, Share2, Lightbulb, Target, TrendingUp, AlertCircle } from 'lucide-react';
+import { FileBarChart, Copy, Check, RefreshCw, Download, Share2, Lightbulb, Target, TrendingUp } from 'lucide-react';
 import { useSites } from '../../contexts/SiteContext';
 import { summaryApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
@@ -26,7 +26,6 @@ const LlmSiteSummaries = () => {
   const [isCopied, setIsCopied] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState('');
   const [wordCount, setWordCount] = useState(0);
-  const [lastError, setLastError] = useState<string | null>(null);
 
   // Summary type options with descriptions
   const summaryTypes = [
@@ -121,7 +120,6 @@ const LlmSiteSummaries = () => {
     setIsGenerating(true);
     setDataSource('');
     setWordCount(0);
-    setLastError(null);
     
     try {
       const result = await summaryApi.generateSummary(selectedSite.id, selectedSite.url, summaryType);
@@ -131,25 +129,13 @@ const LlmSiteSummaries = () => {
       setDataSource(result.dataSource || 'Generated');
       setWordCount(result.wordCount || 0);
       
-      // Check if there was an error but we got a fallback
-      if (result.error) {
-        setLastError(result.error);
-        toast.success(`Summary generated using fallback method (${result.wordCount || 0} words)`, {
-          duration: 4000,
-        });
-        toast.error(`Note: ${result.error}`, {
-          duration: 6000,
-        });
-      } else {
-        toast.success(`Summary generated successfully! (${result.wordCount || 0} words)`);
-      }
+      toast.success(`Summary generated successfully! (${result.wordCount || 0} words)`);
       
       // Reset form
       setSummaryType('');
     } catch (error) {
       console.error('Error generating summary:', error);
-      setLastError(error instanceof Error ? error.message : 'Unknown error occurred');
-      toast.error(`Failed to generate summary: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error('Failed to generate summary');
     } finally {
       setIsGenerating(false);
     }
@@ -212,24 +198,6 @@ const LlmSiteSummaries = () => {
           )}
         </div>
 
-        {/* Connection Status Warning */}
-        {lastError && (
-          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <div className="flex items-start">
-              <AlertCircle className="h-5 w-5 text-yellow-600 mr-3 mt-0.5 flex-shrink-0" />
-              <div>
-                <h3 className="text-sm font-medium text-yellow-800">Connection Issue Detected</h3>
-                <p className="mt-1 text-sm text-yellow-700">
-                  {lastError}. Summaries are being generated using fallback methods.
-                </p>
-                <p className="mt-2 text-xs text-yellow-600">
-                  To resolve this, ensure your Supabase Edge Functions are properly deployed and your internet connection is stable.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
             <Card>
@@ -275,16 +243,8 @@ const LlmSiteSummaries = () => {
                 </div>
 
                 {dataSource && (
-                  <div className={`p-3 rounded-lg border ${
-                    dataSource.includes('Fallback') || dataSource.includes('Local') 
-                      ? 'bg-yellow-50 border-yellow-100' 
-                      : 'bg-green-50 border-green-100'
-                  }`}>
-                    <div className={`flex items-center space-x-2 text-xs ${
-                      dataSource.includes('Fallback') || dataSource.includes('Local')
-                        ? 'text-yellow-700'
-                        : 'text-green-700'
-                    }`}>
+                  <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+                    <div className="flex items-center space-x-2 text-xs text-green-700">
                       <span>📊 Source: {dataSource}</span>
                       <span>📝 Words: {wordCount}</span>
                     </div>

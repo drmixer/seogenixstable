@@ -11,12 +11,6 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
 
-// Enhanced logging for environment variables
-console.log("🔧 Environment Variables Check:");
-console.log(`📍 SUPABASE_URL: ${supabaseUrl ? 'Set' : 'Missing'}`);
-console.log(`🔑 SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? 'Set (length: ' + supabaseServiceKey.length + ')' : 'Missing'}`);
-console.log(`🤖 GEMINI_API_KEY: ${geminiApiKey ? 'Set (length: ' + geminiApiKey.length + ', starts with: ' + geminiApiKey.substring(0, 6) + '...)' : 'Missing'}`);
-
 // Validate required environment variables
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing required Supabase environment variables");
@@ -33,87 +27,16 @@ interface RequestBody {
   user_id: string;
 }
 
-// Function to validate Gemini API key
-function isValidGeminiApiKey(apiKey: string | undefined): boolean {
-  if (!apiKey) {
-    console.log("❌ Gemini API key is undefined or null");
-    return false;
-  }
-  
-  // Trim whitespace
-  apiKey = apiKey.trim();
-  
-  // Check for placeholder values
-  if (apiKey.includes('your-') || apiKey.includes('YOUR_') || apiKey.includes('placeholder')) {
-    console.log("❌ Gemini API key appears to be a placeholder");
-    return false;
-  }
-  
-  // Check minimum length (Gemini API keys are typically 39+ characters)
-  if (apiKey.length < 35) {
-    console.log(`❌ Gemini API key too short: ${apiKey.length} characters`);
-    return false;
-  }
-  
-  // Check for common invalid patterns
-  if (apiKey === 'undefined' || apiKey === 'null' || apiKey === '') {
-    console.log("❌ Gemini API key is invalid string");
-    return false;
-  }
-  
-  // Gemini API keys typically start with specific patterns
-  if (!apiKey.startsWith('AIza')) {
-    console.log(`❌ Gemini API key doesn't start with expected pattern: ${apiKey.substring(0, 6)}`);
-    return false;
-  }
-  
-  console.log("✅ Gemini API key appears valid");
-  return true;
-}
-
-// Function to validate URL accessibility
-function isAccessibleUrl(url: string): boolean {
-  try {
-    const urlObj = new URL(url);
-    
-    // Check for localhost or private network addresses
-    if (urlObj.hostname === 'localhost' || 
-        urlObj.hostname === '127.0.0.1' ||
-        urlObj.hostname.startsWith('192.168.') ||
-        urlObj.hostname.startsWith('10.') ||
-        urlObj.hostname.startsWith('172.')) {
-      console.log(`❌ URL is not publicly accessible: ${urlObj.hostname}`);
-      return false;
-    }
-    
-    // Check for valid protocols
-    if (!['http:', 'https:'].includes(urlObj.protocol)) {
-      console.log(`❌ Invalid protocol: ${urlObj.protocol}`);
-      return false;
-    }
-    
-    console.log(`✅ URL appears publicly accessible: ${urlObj.hostname}`);
-    return true;
-  } catch (error) {
-    console.log(`❌ Invalid URL format: ${error?.message || 'Unknown URL error'}`);
-    return false;
-  }
-}
-
 // Function to fetch and analyze website content
 async function fetchWebsiteContent(url: string): Promise<string> {
   try {
     console.log(`🌐 Fetching content from: ${url}`);
     
-    // Validate URL accessibility first
-    if (!isAccessibleUrl(url)) {
-      throw new Error(`URL is not publicly accessible: ${url}`);
-    }
-    
     const response = await fetch(url, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; SEOgenix-Bot/1.0; +https://seogemix.com/bot)',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
       },
       signal: AbortSignal.timeout(15000) // 15 second timeout
     });
@@ -177,22 +100,7 @@ ${mainContent}
     `.trim();
   } catch (error) {
     console.error("❌ Error fetching website:", error);
-    
-    // Enhanced error handling for TypeError: Failed to fetch
-    let errorMessage = "Unknown network error";
-    if (error instanceof TypeError) {
-      if (error.message.includes("Failed to fetch")) {
-        errorMessage = "Network request failed - this could be due to CORS restrictions, network connectivity issues, or the target server being unreachable from the Edge Function environment";
-      } else {
-        errorMessage = error.message || "Network type error occurred";
-      }
-    } else if (error instanceof Error) {
-      errorMessage = error.message;
-    } else {
-      errorMessage = String(error);
-    }
-    
-    return `Unable to fetch detailed content from ${url}. Error: ${errorMessage}`;
+    return `Unable to fetch detailed content from ${url}. Error: ${error.message}`;
   }
 }
 
@@ -202,10 +110,8 @@ async function generateSummaryWithGemini(
   summaryType: string,
   websiteContent: string
 ): Promise<any> {
-  console.log("🤖 Checking Gemini API configuration...");
-  
-  if (!isValidGeminiApiKey(geminiApiKey)) {
-    console.log("⚠️ Gemini API key not configured or invalid, using enhanced fallback");
+  if (!geminiApiKey || geminiApiKey.includes('your-') || geminiApiKey.length < 35) {
+    console.log("⚠️ Gemini API key not configured, using enhanced fallback");
     return null;
   }
 
@@ -324,38 +230,33 @@ Format as a technical reference document.`
     };
 
     const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview;
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
-    
-    console.log(`🌐 Making request to Gemini API...`);
-    console.log(`📍 URL: ${geminiUrl.substring(0, 80)}...`);
 
-    const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.3,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-        }
-      }),
-      signal: AbortSignal.timeout(30000)
-    });
-
-    console.log(`📡 Gemini API response status: ${response.status}`);
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.3,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 2048,
+          }
+        }),
+        signal: AbortSignal.timeout(30000)
+      }
+    );
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Gemini API error: ${response.status} - ${errorText}`);
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+      throw new Error(`Gemini API error: ${response.status}`);
     }
 
     const data = await response.json();
@@ -370,27 +271,11 @@ Format as a technical reference document.`
         generated_at: new Date().toISOString()
       };
     } else {
-      console.error("❌ Invalid response format from Gemini:", data);
       throw new Error("Invalid response format from Gemini");
     }
     
   } catch (error) {
     console.error("❌ Error generating summary with Gemini:", error);
-    console.error("❌ Error details:", {
-      name: error?.name || 'Unknown',
-      message: error?.message || 'No error message available',
-      stack: error?.stack || 'No stack trace available'
-    });
-    
-    // Enhanced error handling for network-related TypeError
-    if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
-      console.error("🌐 Network Error: This appears to be a network connectivity issue when trying to reach the Gemini API. This could be due to:");
-      console.error("   - Network restrictions in the Edge Function environment");
-      console.error("   - Gemini API service being temporarily unavailable");
-      console.error("   - DNS resolution issues");
-      console.error("   - Firewall or proxy blocking the request");
-    }
-    
     return null;
   }
 }
@@ -728,10 +613,9 @@ Deno.serve(async (req) => {
     // Validate URL
     try {
       new URL(url);
-    } catch (urlError) {
-      const errorMessage = urlError instanceof Error ? urlError.message : "Invalid URL format";
+    } catch {
       return new Response(
-        JSON.stringify({ error: `Invalid URL format: ${errorMessage}` }),
+        JSON.stringify({ error: "Invalid URL format" }),
         {
           status: 400,
           headers: {
@@ -748,8 +632,7 @@ Deno.serve(async (req) => {
       websiteContent = await fetchWebsiteContent(url);
     } catch (error) {
       console.warn("⚠️ Could not fetch website content:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-      websiteContent = `Basic analysis for ${url} - content fetch failed: ${errorMessage}`;
+      websiteContent = `Basic analysis for ${url} - content fetch failed: ${error.message}`;
     }
 
     let result;
@@ -782,8 +665,7 @@ Deno.serve(async (req) => {
 
     if (summaryError) {
       console.error("❌ Error storing summary:", summaryError);
-      const errorMessage = summaryError.message || "Unknown database error";
-      throw new Error(`Failed to store summary: ${errorMessage}`);
+      throw new Error(`Failed to store summary: ${summaryError.message}`);
     }
 
     console.log(`✅ Summary stored with ID: ${summaryData.id}`);
@@ -809,25 +691,13 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error("💥 === CRITICAL ERROR IN SUMMARY GENERATION ===");
-    
-    // Enhanced error logging and message handling
-    let errorMessage = "Failed to generate summary";
-    let errorDetails = "Unknown error occurred";
-    
-    if (error instanceof Error) {
-      errorMessage = error.message || errorMessage;
-      errorDetails = error.message || errorDetails;
-      console.error(`❌ Error: ${errorMessage}`);
-      console.error(`❌ Stack:`, error.stack || 'No stack trace available');
-    } else {
-      errorDetails = String(error);
-      console.error(`❌ Non-Error object:`, error);
-    }
+    console.error(`❌ Error: ${error.message}`);
+    console.error(`❌ Stack:`, error.stack);
     
     return new Response(
       JSON.stringify({ 
-        error: errorMessage,
-        details: errorDetails,
+        error: "Failed to generate summary",
+        details: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString()
       }),
       {
