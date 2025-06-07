@@ -131,7 +131,7 @@ Make sure all suggestions are relevant, natural-sounding, and optimized for AI u
     })
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`)
+      return generateFallbackPrompts(content, industry, audience, contentType)
     }
 
     const data = await response.json()

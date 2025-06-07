@@ -185,7 +185,7 @@ Follow standard press release format.`
     })
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`)
+      return generateFallbackContent(topic, contentType, industry, audience, tone)
     }
 
     const data = await response.json()
@@ -193,7 +193,7 @@ Follow standard press release format.`
     if (data.candidates && data.candidates[0] && data.candidates[0].content) {
       return data.candidates[0].content.parts[0].text
     } else {
-      throw new Error('Invalid response from Gemini API')
+      return generateFallbackContent(topic, contentType, industry, audience, tone)
     }
   } catch (error) {
     console.error('❌ Gemini API error:', error)

@@ -325,7 +325,7 @@ Write as a technical overview in 300-500 words with clear specifications.`
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`❌ Gemini API error: ${response.status} - ${errorText}`)
-      throw new Error(`Gemini API error: ${response.status}`)
+      return generateEnhancedFallbackSummary(url, summaryType)
     }
 
     const data = await response.json()
@@ -337,7 +337,7 @@ Write as a technical overview in 300-500 words with clear specifications.`
       return generatedContent
     } else {
       console.error('❌ Invalid response structure from Gemini API:', JSON.stringify(data))
-      throw new Error('Invalid response from Gemini API')
+      return generateEnhancedFallbackSummary(url, summaryType)
     }
   } catch (error) {
     console.error('❌ Gemini API error:', error)
