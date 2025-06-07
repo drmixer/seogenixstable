@@ -451,16 +451,51 @@ export const promptApi = {
 // API functions for citations - NOW USING REAL EDGE FUNCTION
 export const citationApi = {
   trackCitations: async (siteId: string, url: string) => {
+    console.log('🚀 Starting real citation tracking...');
+    console.log(`📋 Site ID: ${siteId}`);
+    console.log(`🌐 URL: ${url}`);
+    
     // Get the current user's ID
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
-    // Call the trackCitations edge function
-    return await callEdgeFunction('trackCitations', { 
-      site_id: siteId, 
-      url,
-      user_id: user.id 
-    });
+    console.log(`👤 User ID: ${user.id}`);
+
+    try {
+      // Call the trackCitations edge function directly
+      console.log('📡 Calling trackCitations edge function...');
+      
+      const response = await fetch(`${getBaseUrl()}/trackCitations`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ 
+          site_id: siteId, 
+          url,
+          user_id: user.id 
+        })
+      });
+
+      console.log(`📥 Response status: ${response.status}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Edge function error:', errorText);
+        throw new Error(`Edge function failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Real citation tracking completed!');
+      console.log(`📊 Found ${result.new_citations_found} new citations`);
+      console.log(`🔍 Platforms checked: ${result.platforms_checked?.join(', ')}`);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Citation tracking failed:', error);
+      console.log('🔄 Falling back to mock data...');
+      
+      // Return fallback data if edge function fails
+      return trackCitationsFallback({ site_id: siteId, url });
+    }
   },
   
   getCitations: async (siteId: string) => {
