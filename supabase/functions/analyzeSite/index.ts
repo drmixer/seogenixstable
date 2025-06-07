@@ -86,9 +86,9 @@ Deno.serve(async (req) => {
       throw new Error(`Failed to track usage: ${usageError.message}`);
     }
 
-    // Call Gemini API with the correct model name
+    // Call Gemini API with the correct model name and API version
     const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent`,
+      `https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent`,
       {
         method: "POST",
         headers: {
