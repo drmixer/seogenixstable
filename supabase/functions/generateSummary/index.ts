@@ -214,16 +214,15 @@ Write as technical overview in 400-500 words.`
       throw new Error(`Gemini API returned unexpected content type: ${contentType}`)
     }
 
+    // Get the response text once and store it
+    const responseText = await response.text()
+    
     let data
     try {
-      // Get the response text first
-      const responseText = await response.text()
-      
-      // Try to parse as JSON
+      // Try to parse as JSON using the stored response text
       data = JSON.parse(responseText)
     } catch (jsonError) {
-      // If JSON parsing fails, get a snippet of the response for debugging
-      const responseText = await response.text()
+      // If JSON parsing fails, use the already stored response text for debugging
       const snippet = responseText.substring(0, 200) + (responseText.length > 200 ? '...' : '')
       console.error('❌ Failed to parse Gemini API response as JSON:', jsonError)
       console.error('❌ Response snippet:', snippet)
