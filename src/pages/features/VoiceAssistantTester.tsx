@@ -584,11 +584,11 @@ const VoiceAssistantTester = () => {
                             {result.hasCitation ? 'Cited' : 'Not Cited'}
                           </span>
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            result.dataSource.includes('Real')
+                            (result.dataSource || '').includes('Real')
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-gray-100 text-gray-800'
                           }`}>
-                            {result.dataSource.includes('Real') ? 'Real Data' : 'Simulated'}
+                            {(result.dataSource || '').includes('Real') ? 'Real Data' : 'Simulated'}
                           </span>
                           <Button
                             variant="outline"
@@ -647,7 +647,7 @@ const VoiceAssistantTester = () => {
                               <div className="bg-white p-2 rounded border">
                                 <div className="font-medium text-blue-800">Response Analysis</div>
                                 <div className="text-blue-700">Length: {result.debugInfo.assistantResponseLength} chars</div>
-                                <div className="text-blue-700">Source: {result.dataSource}</div>
+                                <div className="text-blue-700">Source: {result.dataSource || 'Unknown'}</div>
                               </div>
                             </div>
                             
