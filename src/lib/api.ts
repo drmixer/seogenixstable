@@ -1,3 +1,66 @@
+import { supabase } from './supabaseClient';
+
+// Helper function to call edge functions
+const callEdgeFunction = async (functionName: string, payload: any) => {
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body: payload
+  });
+  
+  if (error) throw error;
+  return data;
+};
+
+// API functions for sites
+export const siteApi = {
+  getSites: async () => {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  getSite: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('id', siteId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  addSite: async (siteData: { name: string; url: string }) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const { data, error } = await supabase
+      .from('sites')
+      .insert({
+        name: siteData.name,
+        url: siteData.url,
+        user_id: user.id
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  deleteSite: async (siteId: string) => {
+    const { error } = await supabase
+      .from('sites')
+      .delete()
+      .eq('id', siteId);
+    
+    if (error) throw error;
+  }
+};
+
 // API functions for summaries - ENHANCED
 export const summaryApi = {
   generateSummary: async (siteId: string, url: string, summaryType: string) => {
