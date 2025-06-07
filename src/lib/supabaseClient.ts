@@ -12,7 +12,7 @@ const isValidConfig = () => {
          supabaseUrl !== 'your-supabase-url' && 
          supabaseAnonKey !== 'your-supabase-anon-key' &&
          supabaseUrl.startsWith('https://') &&
-         supabaseAnonKey.length > 20;
+         supabaseAnonKey.length > 50; // JWT tokens are much longer than 20 characters
 };
 
 if (!isValidConfig()) {
@@ -22,50 +22,79 @@ if (!isValidConfig()) {
   console.warn('Please ensure your .env file contains valid Supabase credentials.');
 }
 
-// Create a mock client factory function
-const createMockClient = () => ({
-  auth: {
-    signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
-    signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
-    signOut: () => Promise.resolve({ error: null }),
-    getSession: () => Promise.resolve({ data: { session: null }, error: null }),
-    getUser: () => Promise.resolve({ data: { user: null }, error: null }),
-    onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
-  },
-  from: () => ({
-    select: () => Promise.resolve({ data: [], error: null }),
-    insert: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
-    update: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
-    delete: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
-    eq: function() { return this; },
-    single: function() { return this; },
-    order: function() { return this; },
-    limit: function() { return this; },
-    maybeSingle: function() { return this; },
-  }),
-  rpc: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
-} as any);
-
-// Create a mock client if environment variables are not properly configured
+// Create the Supabase client
 const createSupabaseClient = () => {
   if (!isValidConfig()) {
     console.warn('🔄 Using mock Supabase client due to invalid configuration');
-    return createMockClient();
+    // Return a mock client that throws meaningful errors
+    return {
+      auth: {
+        signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        signOut: () => Promise.resolve({ error: null }),
+        getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+        getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      },
+      from: () => ({
+        select: () => Promise.resolve({ data: [], error: null }),
+        insert: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        update: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        delete: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        eq: function() { return this; },
+        single: function() { return this; },
+        order: function() { return this; },
+        limit: function() { return this; },
+        maybeSingle: function() { return this; },
+      }),
+      functions: {
+        invoke: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured - please check your environment variables' } })
+      },
+      rpc: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+    } as any;
   }
   
   try {
     console.log('✅ Creating real Supabase client with valid configuration');
-    return createClient<Database>(supabaseUrl, supabaseAnonKey);
+    return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      }
+    });
   } catch (error) {
     console.error('❌ Error creating Supabase client:', error);
     console.warn('🔄 Falling back to mock Supabase client');
-    return createMockClient();
+    return {
+      auth: {
+        signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase client creation failed' } }),
+        signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase client creation failed' } }),
+        signOut: () => Promise.resolve({ error: null }),
+        getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+        getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      },
+      from: () => ({
+        select: () => Promise.resolve({ data: [], error: null }),
+        insert: () => Promise.resolve({ data: null, error: { message: 'Supabase client creation failed' } }),
+        update: () => Promise.resolve({ data: null, error: { message: 'Supabase client creation failed' } }),
+        delete: () => Promise.resolve({ data: null, error: { message: 'Supabase client creation failed' } }),
+        eq: function() { return this; },
+        single: function() { return this; },
+        order: function() { return this; },
+        limit: function() { return this; },
+        maybeSingle: function() { return this; },
+      }),
+      functions: {
+        invoke: () => Promise.resolve({ data: null, error: { message: 'Supabase client creation failed' } })
+      },
+      rpc: () => Promise.resolve({ data: null, error: { message: 'Supabase client creation failed' } }),
+    } as any;
   }
 };
 
-// Ensure supabase is always defined with a fallback
-const supabase = createSupabaseClient() || createMockClient();
+// Create the client
+const supabase = createSupabaseClient();
 
 export default supabase;
-
-export { supabase }
+export { supabase };
