@@ -299,8 +299,8 @@ const SchemaGenerator = () => {
                   <div className="bg-blue-50 p-4 rounded-md">
                     <ol className="list-decimal list-inside space-y-2 text-gray-700 text-sm">
                       <li>Copy the generated schema markup above</li>
-                      <li>Wrap it in a <code className="bg-white px-1 py-0.5 rounded text-xs"><script type="application/ld+json"></code> tag</li>
-                      <li>Add the script to the <code className="bg-white px-1 py-0.5 rounded text-xs"><head></code> section of your HTML</li>
+                      <li>Wrap it in a <code className="bg-white px-1 py-0.5 rounded text-xs">script type="application/ld+json"</code> tag</li>
+                      <li>Add the script to the <code className="bg-white px-1 py-0.5 rounded text-xs">head</code> section of your HTML</li>
                       <li>Test using the <a href="https://validator.schema.org/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-500 underline">Schema.org Validator</a></li>
                       <li>Monitor your search results for rich snippet improvements</li>
                     </ol>
