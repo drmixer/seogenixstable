@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, Send, Bot, Copy, Check, RefreshCw, ExternalLink, AlertCircle, Info } from 'lucide-react';
+import { Mic, Send, Bot, Copy, Check, RefreshCw, ExternalLink, AlertCircle, Info, Bug, Eye, EyeOff } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
 import { useSites } from '../../contexts/SiteContext';
 import { citationApi } from '../../lib/api';
@@ -429,24 +429,63 @@ const VoiceAssistantTester = () => {
         transition={{ duration: 0.5 }}
       >
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Voice Assistant Tester</h1>
-          <p className="mt-2 text-gray-600">
-            Test how voice assistants like Siri, Alexa, and Google Assistant respond to queries about your content.
-          </p>
-          {selectedSite && (
-            <div className="mt-2 text-sm text-gray-500">
-              Testing site: <span className="font-medium text-gray-700">{selectedSite.name}</span>
-              <a 
-                href={selectedSite.url.startsWith('http') ? selectedSite.url : `https://${selectedSite.url}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-2 text-indigo-600 hover:text-indigo-800 inline-flex items-center"
-              >
-                <ExternalLink size={14} />
-              </a>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Voice Assistant Tester</h1>
+              <p className="mt-2 text-gray-600">
+                Test how voice assistants like Siri, Alexa, and Google Assistant respond to queries about your content.
+              </p>
+              {selectedSite && (
+                <div className="mt-2 text-sm text-gray-500">
+                  Testing site: <span className="font-medium text-gray-700">{selectedSite.name}</span>
+                  <a 
+                    href={selectedSite.url.startsWith('http') ? selectedSite.url : `https://${selectedSite.url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-indigo-600 hover:text-indigo-800 inline-flex items-center"
+                  >
+                    <ExternalLink size={14} />
+                  </a>
+                </div>
+              )}
             </div>
-          )}
+            
+            {/* 🔍 PROMINENT DEBUG MODE TOGGLE */}
+            <div className="flex items-center space-x-4">
+              <Button
+                variant={showDebugInfo ? "primary" : "outline"}
+                onClick={() => setShowDebugInfo(!showDebugInfo)}
+                icon={showDebugInfo ? <EyeOff size={16} /> : <Eye size={16} />}
+                className={showDebugInfo ? "bg-blue-600 hover:bg-blue-700" : "border-blue-300 text-blue-600 hover:bg-blue-50"}
+              >
+                {showDebugInfo ? 'Hide Debug' : 'Show Debug'}
+              </Button>
+              
+              {showDebugInfo && (
+                <div className="flex items-center text-sm text-blue-600">
+                  <Bug size={16} className="mr-1" />
+                  Debug Mode Active
+                </div>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* 🚨 DEBUG STATUS BANNER */}
+        {showDebugInfo && (
+          <Card className="mb-6 bg-blue-50 border-2 border-blue-200">
+            <div className="flex items-center">
+              <Bug className="h-6 w-6 text-blue-600 mr-3" />
+              <div>
+                <h3 className="text-lg font-medium text-blue-800">🔍 Debug Mode Enabled</h3>
+                <p className="text-sm text-blue-700 mt-1">
+                  You'll see detailed API response data, timing information, and confidence calculation breakdowns for each test.
+                  This helps you understand exactly what's happening with the real citation tracking API.
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
@@ -507,17 +546,6 @@ const VoiceAssistantTester = () => {
                 <p>• The system simulates how voice assistants would respond</p>
                 <p>• Real citation data improves response accuracy</p>
                 <p>• Results help identify optimization opportunities</p>
-              </div>
-              
-              <div className="mt-4">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDebugInfo(!showDebugInfo)}
-                  icon={<Info size={16} />}
-                >
-                  {showDebugInfo ? 'Hide' : 'Show'} Debug Info
-                </Button>
               </div>
             </Card>
           </div>
@@ -600,19 +628,55 @@ const VoiceAssistantTester = () => {
                         </div>
                       </div>
 
-                      {/* Debug Information */}
+                      {/* 🔍 ENHANCED DEBUG INFORMATION */}
                       {showDebugInfo && result.debugInfo && (
-                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
-                          <h5 className="text-sm font-medium text-blue-800 mb-2">Debug Information</h5>
-                          <div className="text-xs text-blue-700 space-y-1">
-                            <div><strong>API Duration:</strong> {result.debugInfo.apiDuration}ms</div>
-                            <div><strong>Assistant Response from API:</strong> {result.debugInfo.hasAssistantResponse ? 'Yes' : 'No'}</div>
-                            <div><strong>Response Length:</strong> {result.debugInfo.assistantResponseLength} chars</div>
-                            <div><strong>New Citations:</strong> {result.debugInfo.newCitationsFound}</div>
-                            <div><strong>Total Citations:</strong> {result.debugInfo.totalCitations}</div>
-                            <div><strong>Search Summary:</strong> {JSON.stringify(result.debugInfo.searchSummary)}</div>
-                            <div><strong>Data Source:</strong> {result.dataSource}</div>
+                        <div className="mt-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                          <div className="flex items-center mb-3">
+                            <Bug className="h-5 w-5 text-blue-600 mr-2" />
+                            <h5 className="text-sm font-medium text-blue-800">🔍 Debug Information</h5>
                           </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                            <div className="space-y-2">
+                              <div className="bg-white p-2 rounded border">
+                                <div className="font-medium text-blue-800">API Performance</div>
+                                <div className="text-blue-700">Duration: {result.debugInfo.apiDuration}ms</div>
+                                <div className="text-blue-700">Status: {result.debugInfo.hasAssistantResponse ? '✅ Success' : '⚠️ No Response'}</div>
+                              </div>
+                              
+                              <div className="bg-white p-2 rounded border">
+                                <div className="font-medium text-blue-800">Response Analysis</div>
+                                <div className="text-blue-700">Length: {result.debugInfo.assistantResponseLength} chars</div>
+                                <div className="text-blue-700">Source: {result.dataSource}</div>
+                              </div>
+                            </div>
+                            
+                            <div className="space-y-2">
+                              <div className="bg-white p-2 rounded border">
+                                <div className="font-medium text-blue-800">Citation Data</div>
+                                <div className="text-blue-700">New: {result.debugInfo.newCitationsFound}</div>
+                                <div className="text-blue-700">Total: {result.debugInfo.totalCitations}</div>
+                                <div className="text-blue-700">High Authority: {result.debugInfo.searchSummary?.high_authority_citations || 0}</div>
+                              </div>
+                              
+                              <div className="bg-white p-2 rounded border">
+                                <div className="font-medium text-blue-800">Platform Coverage</div>
+                                <div className="text-blue-700">Google: {result.debugInfo.searchSummary?.google_results || 0}</div>
+                                <div className="text-blue-700">News: {result.debugInfo.searchSummary?.news_results || 0}</div>
+                                <div className="text-blue-700">Reddit: {result.debugInfo.searchSummary?.reddit_results || 0}</div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {/* Raw API Response (collapsible) */}
+                          <details className="mt-3">
+                            <summary className="cursor-pointer text-blue-800 font-medium hover:text-blue-600">
+                              📋 Raw API Response (Click to expand)
+                            </summary>
+                            <div className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-40">
+                              <pre>{JSON.stringify(result.debugInfo.rawApiResponse, null, 2)}</pre>
+                            </div>
+                          </details>
                         </div>
                       )}
                     </div>
@@ -639,7 +703,7 @@ const VoiceAssistantTester = () => {
                   <AlertCircle className="h-5 w-5 text-green-600" />
                 </div>
                 <div className="ml-3">
-                  <h3 className="text-sm font-medium text-green-800">Real Citation Data Active</h3>
+                  <h3 className="text-sm font-medium text-green-800">✅ Real Citation Data Active</h3>
                   <div className="mt-2 text-sm text-green-700">
                     <p>
                       This tool is actively searching for real citations of your website across Google, News, and Reddit APIs.
@@ -649,7 +713,7 @@ const VoiceAssistantTester = () => {
                       The 40% confidence scores suggest the system is working but not finding specific citations for your queries.
                     </p>
                     <p className="mt-1">
-                      <strong>Debug mode:</strong> Enable "Show Debug Info" above to see detailed API response data.
+                      <strong>Debug mode:</strong> Click the "Show Debug" button above to see detailed API response data and understand exactly what's happening.
                     </p>
                   </div>
                 </div>
