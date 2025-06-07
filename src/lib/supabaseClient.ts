@@ -51,8 +51,36 @@ const createSupabaseClient = () => {
     } as any;
   }
   
-  console.log('✅ Creating real Supabase client with valid configuration');
-  return createClient<Database>(supabaseUrl, supabaseAnonKey);
+  try {
+    console.log('✅ Creating real Supabase client with valid configuration');
+    return createClient<Database>(supabaseUrl, supabaseAnonKey);
+  } catch (error) {
+    console.error('❌ Error creating Supabase client:', error);
+    console.warn('🔄 Falling back to mock Supabase client');
+    // Return a mock client that prevents crashes
+    return {
+      auth: {
+        signUp: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        signOut: () => Promise.resolve({ error: null }),
+        getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+        getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      },
+      from: () => ({
+        select: () => Promise.resolve({ data: [], error: null }),
+        insert: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        update: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        delete: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        eq: function() { return this; },
+        single: function() { return this; },
+        order: function() { return this; },
+        limit: function() { return this; },
+        maybeSingle: function() { return this; },
+      }),
+      rpc: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+    } as any;
+  }
 };
 
 export const supabase = createSupabaseClient();
