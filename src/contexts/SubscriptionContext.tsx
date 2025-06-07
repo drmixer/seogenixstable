@@ -122,7 +122,19 @@ const isSupabaseConfigured = () => {
          supabaseUrl !== 'your-supabase-url' && 
          supabaseAnonKey !== 'your-supabase-anon-key' &&
          supabaseUrl !== '' &&
-         supabaseAnonKey !== '';
+         supabaseAnonKey !== '' &&
+         supabaseUrl.startsWith('http') &&
+         supabaseAnonKey.length > 20;
+};
+
+// Helper function to safely make Supabase calls with timeout and error handling
+const safeSupabaseCall = async (operation: () => Promise<any>, timeoutMs: number = 10000) => {
+  return Promise.race([
+    operation(),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
+    )
+  ]);
 };
 
 export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -139,6 +151,11 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
     const loadSubscription = async () => {
       if (!user) {
         setCurrentPlan(null);
+        setUsage({
+          citationsUsed: 0,
+          aiContentUsed: 0,
+          lastAuditDate: null,
+        });
         setLoading(false);
         return;
       }
@@ -157,34 +174,89 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
       }
 
       try {
-        // Fetch subscription and usage data
-        const { data: subscriptionData } = await supabase
-          .from('subscriptions')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        console.log('Loading subscription data for user:', user.id);
 
-        const { data: usageData } = await supabase
-          .from('subscription_usage')
-          .select('*')
-          .eq('user_id', user.id)
-          .maybeSingle();
+        // Test Supabase connection first with a simple query
+        try {
+          await safeSupabaseCall(async () => {
+            const { error } = await supabase.from('subscriptions').select('count').limit(1);
+            if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found, which is OK
+              throw error;
+            }
+          }, 5000);
+          console.log('✅ Supabase connection test successful');
+        } catch (connectionError) {
+          console.error('❌ Supabase connection test failed:', connectionError);
+          throw new Error('Unable to connect to Supabase');
+        }
+
+        // Fetch subscription and usage data with timeout
+        const [subscriptionResult, usageResult] = await Promise.allSettled([
+          safeSupabaseCall(async () => {
+            const { data, error } = await supabase
+              .from('subscriptions')
+              .select('*')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            
+            if (error && error.code !== 'PGRST116') {
+              throw error;
+            }
+            return data;
+          }),
+          safeSupabaseCall(async () => {
+            const { data, error } = await supabase
+              .from('subscription_usage')
+              .select('*')
+              .eq('user_id', user.id)
+              .maybeSingle();
+            
+            if (error && error.code !== 'PGRST116') {
+              throw error;
+            }
+            return data;
+          })
+        ]);
+
+        // Handle subscription data
+        let subscriptionData = null;
+        if (subscriptionResult.status === 'fulfilled') {
+          subscriptionData = subscriptionResult.value;
+          console.log('✅ Subscription data loaded:', subscriptionData);
+        } else {
+          console.warn('⚠️ Failed to load subscription data:', subscriptionResult.reason);
+        }
+
+        // Handle usage data
+        let usageData = null;
+        if (usageResult.status === 'fulfilled') {
+          usageData = usageResult.value;
+          console.log('✅ Usage data loaded:', usageData);
+        } else {
+          console.warn('⚠️ Failed to load usage data:', usageResult.reason);
+        }
 
         // Set current plan based on subscription data
-        if (subscriptionData?.plan_id) {
+        if (subscriptionData?.plan_id && plans[subscriptionData.plan_id as PlanTier]) {
           const planTier = subscriptionData.plan_id as PlanTier;
           setCurrentPlan(plans[planTier]);
+          console.log(`✅ Set plan to: ${planTier}`);
         } else {
           // Default to basic plan if no subscription found
           setCurrentPlan(plans.basic);
+          console.log('✅ Set default plan: basic');
         }
 
         // Set usage data
         if (usageData) {
           setUsage({
-            citationsUsed: usageData.citations_used,
-            aiContentUsed: usageData.ai_content_used,
+            citationsUsed: usageData.citations_used || 0,
+            aiContentUsed: usageData.ai_content_used || 0,
             lastAuditDate: usageData.last_audit_date ? new Date(usageData.last_audit_date) : null,
+          });
+          console.log('✅ Set usage data:', {
+            citationsUsed: usageData.citations_used || 0,
+            aiContentUsed: usageData.ai_content_used || 0,
           });
         } else {
           // If no usage data exists, initialize with default values
@@ -193,9 +265,10 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
             aiContentUsed: 0,
             lastAuditDate: null,
           });
+          console.log('✅ Set default usage data');
         }
       } catch (error) {
-        console.error('Error loading subscription:', error);
+        console.error('❌ Error loading subscription:', error);
         // Default to basic plan on error
         setCurrentPlan(plans.basic);
         setUsage({
@@ -203,6 +276,17 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
           aiContentUsed: 0,
           lastAuditDate: null,
         });
+        
+        // Show user-friendly error message
+        if (error instanceof Error) {
+          if (error.message.includes('timeout') || error.message.includes('fetch')) {
+            console.warn('⚠️ Network timeout - using offline mode');
+          } else if (error.message.includes('connect')) {
+            console.warn('⚠️ Connection failed - using offline mode');
+          } else {
+            console.warn('⚠️ Database error - using offline mode:', error.message);
+          }
+        }
       } finally {
         setLoading(false);
       }
