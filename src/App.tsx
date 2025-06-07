@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabaseClient';
 import { AuthProvider } from './contexts/AuthContext';
 import { SubscriptionProvider } from './contexts/SubscriptionContext';
+import { SiteProvider } from './contexts/SiteContext';
 
 // Pages
 import LandingPage from './pages/LandingPage';
@@ -50,34 +51,36 @@ function App() {
   return (
     <AuthProvider>
       <SubscriptionProvider>
-        <Router>
-          <Toaster position="top-right" />
-          <Routes>
-            {/* Public routes */}
-            <Route path="/" element={<LandingPage />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-            
-            {/* Protected routes */}
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/add-site" element={<ProtectedRoute><AddSite /></ProtectedRoute>} />
-            <Route path="/sites/:siteId" element={<ProtectedRoute><SiteDetails /></ProtectedRoute>} />
-            <Route path="/ai-visibility-audit" element={<ProtectedRoute><AiVisibilityAudit /></ProtectedRoute>} />
-            <Route path="/schema-generator" element={<ProtectedRoute><SchemaGenerator /></ProtectedRoute>} />
-            <Route path="/prompt-match-suggestions" element={<ProtectedRoute><PromptMatchSuggestions /></ProtectedRoute>} />
-            <Route path="/ai-content-generator" element={<ProtectedRoute><AiContentGenerator /></ProtectedRoute>} />
-            <Route path="/citation-tracker" element={<ProtectedRoute><CitationTracker /></ProtectedRoute>} />
-            <Route path="/voice-assistant-tester" element={<ProtectedRoute><VoiceAssistantTester /></ProtectedRoute>} />
-            <Route path="/llm-site-summaries" element={<ProtectedRoute><LlmSiteSummaries /></ProtectedRoute>} />
-            <Route path="/entity-coverage-analyzer" element={<ProtectedRoute><EntityCoverageAnalyzer /></ProtectedRoute>} />
-            <Route path="/account-settings" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
-            
-            {/* Fallbacks */}
-            <Route path="/404" element={<NotFound />} />
-            <Route path="*" element={<Navigate to="/404" replace />} />
-          </Routes>
-        </Router>
+        <SiteProvider>
+          <Router>
+            <Toaster position="top-right" />
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<LandingPage />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              
+              {/* Protected routes */}
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/add-site" element={<ProtectedRoute><AddSite /></ProtectedRoute>} />
+              <Route path="/sites/:siteId" element={<ProtectedRoute><SiteDetails /></ProtectedRoute>} />
+              <Route path="/ai-visibility-audit" element={<ProtectedRoute><AiVisibilityAudit /></ProtectedRoute>} />
+              <Route path="/schema-generator" element={<ProtectedRoute><SchemaGenerator /></ProtectedRoute>} />
+              <Route path="/prompt-match-suggestions" element={<ProtectedRoute><PromptMatchSuggestions /></ProtectedRoute>} />
+              <Route path="/ai-content-generator" element={<ProtectedRoute><AiContentGenerator /></ProtectedRoute>} />
+              <Route path="/citation-tracker" element={<ProtectedRoute><CitationTracker /></ProtectedRoute>} />
+              <Route path="/voice-assistant-tester" element={<ProtectedRoute><VoiceAssistantTester /></ProtectedRoute>} />
+              <Route path="/llm-site-summaries" element={<ProtectedRoute><LlmSiteSummaries /></ProtectedRoute>} />
+              <Route path="/entity-coverage-analyzer" element={<ProtectedRoute><EntityCoverageAnalyzer /></ProtectedRoute>} />
+              <Route path="/account-settings" element={<ProtectedRoute><AccountSettings /></ProtectedRoute>} />
+              
+              {/* Fallbacks */}
+              <Route path="/404" element={<NotFound />} />
+              <Route path="*" element={<Navigate to="/404" replace />} />
+            </Routes>
+          </Router>
+        </SiteProvider>
       </SubscriptionProvider>
     </AuthProvider>
   );

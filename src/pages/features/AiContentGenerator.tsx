@@ -1,17 +1,20 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Copy, Check, Download, Wand2, Lightbulb } from 'lucide-react';
+import { FileText, Copy, Check, Download, Wand2, Lightbulb, AlertCircle } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
+import { useSites } from '../../contexts/SiteContext';
 import { contentApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
+import EmptyState from '../../components/ui/EmptyState';
 import FeatureRestriction from '../../components/ui/FeatureRestriction';
 import toast from 'react-hot-toast';
 
 const AiContentGenerator = () => {
   const { isFeatureEnabled, canGenerateContent } = useSubscription();
+  const { selectedSite, sites } = useSites();
   const [topic, setTopic] = useState('');
   const [contentType, setContentType] = useState('');
   const [generatedContent, setGeneratedContent] = useState('');
@@ -27,6 +30,21 @@ const AiContentGenerator = () => {
           title="AI Content Generator"
           description="Generate AI-optimized content snippets, FAQs, and meta descriptions tailored for maximum AI visibility."
           requiredPlan="Pro"
+        />
+      </AppLayout>
+    );
+  }
+
+  // Show empty state if no sites
+  if (sites.length === 0) {
+    return (
+      <AppLayout>
+        <EmptyState
+          title="No sites added yet"
+          description="Add your first site to start generating AI-optimized content tailored to your website."
+          icon={<FileText size={24} />}
+          actionLabel="Add Your First Site"
+          onAction={() => window.location.href = '/add-site'}
         />
       </AppLayout>
     );
@@ -52,6 +70,11 @@ const AiContentGenerator = () => {
   ];
 
   const handleGenerateContent = async () => {
+    if (!selectedSite) {
+      toast.error('Please select a site first');
+      return;
+    }
+
     if (!topic || !contentType) {
       toast.error('Please enter a topic and select a content type');
       return;
@@ -67,7 +90,9 @@ const AiContentGenerator = () => {
     setDataSource('');
     
     try {
-      const result = await contentApi.generateContent(topic, contentType);
+      // Include site context in the topic for better content generation
+      const contextualTopic = `${topic} for ${selectedSite.name} (${selectedSite.url})`;
+      const result = await contentApi.generateContent(contextualTopic, contentType);
       setGeneratedContent(result.content || result);
       setDataSource(result.dataSource || 'Generated');
       toast.success('Content generated successfully');
@@ -132,9 +157,24 @@ const AiContentGenerator = () => {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">AI Content Generator</h1>
           <p className="mt-2 text-gray-600">
-            Create AI-optimized content snippets, FAQs, and meta descriptions tailored for maximum AI visibility.
+            Create AI-optimized content for <span className="font-medium">{selectedSite?.name}</span> tailored for maximum AI visibility.
           </p>
         </div>
+
+        {!selectedSite && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  Please select a site from the dropdown above to generate content tailored to your website.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
@@ -142,6 +182,14 @@ const AiContentGenerator = () => {
               <h2 className="text-lg font-medium text-gray-900 mb-4">Generate Content</h2>
               
               <div className="space-y-4">
+                {selectedSite && (
+                  <div className="p-3 bg-gray-50 rounded-md">
+                    <p className="text-sm font-medium text-gray-700">Selected Site:</p>
+                    <p className="text-sm text-gray-600">{selectedSite.name}</p>
+                    <p className="text-xs text-gray-500">{selectedSite.url}</p>
+                  </div>
+                )}
+
                 <div>
                   <Input
                     id="topic"
@@ -198,7 +246,7 @@ const AiContentGenerator = () => {
                     className="w-full"
                     onClick={handleGenerateContent}
                     isLoading={isGenerating}
-                    disabled={!canGenerateContent()}
+                    disabled={!canGenerateContent() || !selectedSite}
                     icon={<Wand2 size={16} />}
                   >
                     Generate Content
@@ -285,7 +333,7 @@ const AiContentGenerator = () => {
                 <div className="bg-gray-50 p-8 rounded-md text-center">
                   <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500">
-                    Enter a topic and select a content type to generate AI-optimized content.
+                    {selectedSite ? 'Enter a topic and select a content type to generate AI-optimized content.' : 'Select a site, enter a topic, and choose a content type to get started.'}
                   </p>
                 </div>
               )}

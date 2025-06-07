@@ -18,6 +18,8 @@ import {
   Home
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useSites } from '../../contexts/SiteContext';
+import SiteSelector from './SiteSelector';
 import toast from 'react-hot-toast';
 
 interface AppLayoutProps {
@@ -26,6 +28,7 @@ interface AppLayoutProps {
 
 const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const { user, signOut } = useAuth();
+  const { sites } = useSites();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -202,19 +205,35 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             <Menu size={24} />
           </button>
           <div className="flex justify-between flex-1 px-4 md:px-8">
-            <div className="flex items-center">
+            <div className="flex items-center space-x-4">
               <h1 className="text-xl font-semibold text-gray-900 hidden md:block">
                 {navItems.find(item => item.path === location.pathname)?.label || 'SEOgenix'}
               </h1>
+              {/* Site Selector - only show on tool pages */}
+              {location.pathname !== '/dashboard' && location.pathname !== '/add-site' && !location.pathname.startsWith('/sites/') && (
+                <div className="hidden md:block">
+                  <SiteSelector />
+                </div>
+              )}
             </div>
-            <div className="flex items-center ml-auto">
-              <Link
-                to="/add-site"
-                className="inline-flex items-center px-3 py-1 mr-4 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                <Plus className="-ml-1 mr-2" size={16} />
-                Add Site
-              </Link>
+            <div className="flex items-center ml-auto space-x-4">
+              {/* Mobile site selector */}
+              {location.pathname !== '/dashboard' && location.pathname !== '/add-site' && !location.pathname.startsWith('/sites/') && (
+                <div className="md:hidden">
+                  <SiteSelector />
+                </div>
+              )}
+              
+              {sites.length > 0 && (
+                <Link
+                  to="/add-site"
+                  className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                >
+                  <Plus className="-ml-1 mr-2" size={16} />
+                  Add Site
+                </Link>
+              )}
+              
               <div className="ml-3 relative">
                 <div className="flex items-center">
                   <div className="bg-indigo-100 text-indigo-800 flex items-center justify-center h-8 w-8 rounded-full">

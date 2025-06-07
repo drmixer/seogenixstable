@@ -1,17 +1,18 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Code2, Copy, Check, Download, ExternalLink } from 'lucide-react';
+import { Code2, Copy, Check, Download, ExternalLink, AlertCircle } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
+import { useSites } from '../../contexts/SiteContext';
 import { schemaApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
+import EmptyState from '../../components/ui/EmptyState';
 import toast from 'react-hot-toast';
 
 const SchemaGenerator = () => {
   const { currentPlan } = useSubscription();
-  const [url, setUrl] = useState('');
+  const { selectedSite, sites } = useSites();
   const [schemaType, setSchemaType] = useState('');
   const [generatedSchema, setGeneratedSchema] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -44,16 +45,13 @@ const SchemaGenerator = () => {
   });
 
   const handleGenerateSchema = async () => {
-    if (!url || !schemaType) {
-      toast.error('Please enter a URL and select a schema type');
+    if (!selectedSite) {
+      toast.error('Please select a site first');
       return;
     }
-    
-    // Validate URL
-    try {
-      new URL(url.startsWith('http') ? url : `https://${url}`);
-    } catch {
-      toast.error('Please enter a valid URL');
+
+    if (!schemaType) {
+      toast.error('Please select a schema type');
       return;
     }
     
@@ -62,7 +60,7 @@ const SchemaGenerator = () => {
     setDataSource('');
     
     try {
-      const result = await schemaApi.generateSchema(url, schemaType);
+      const result = await schemaApi.generateSchema(selectedSite.url, schemaType);
       setGeneratedSchema(result.schema || result);
       setDataSource(result.dataSource || 'Generated');
       toast.success('Schema generated successfully');
@@ -101,6 +99,21 @@ const SchemaGenerator = () => {
     window.open('https://validator.schema.org/', '_blank');
   };
 
+  // Show empty state if no sites
+  if (sites.length === 0) {
+    return (
+      <AppLayout>
+        <EmptyState
+          title="No sites added yet"
+          description="Add your first site to start generating schema markup for better AI visibility."
+          icon={<Code2 size={24} />}
+          actionLabel="Add Your First Site"
+          onAction={() => window.location.href = '/add-site'}
+        />
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
       <motion.div
@@ -111,7 +124,7 @@ const SchemaGenerator = () => {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Schema.org Generator</h1>
           <p className="mt-2 text-gray-600">
-            Create structured data markup that helps AI systems understand your content more effectively.
+            Create structured data markup for <span className="font-medium">{selectedSite?.name}</span> that helps AI systems understand your content more effectively.
           </p>
           {schemaLevel !== 'custom' && (
             <div className="mt-2 text-sm text-blue-600">
@@ -120,22 +133,34 @@ const SchemaGenerator = () => {
           )}
         </div>
 
+        {!selectedSite && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  Please select a site from the dropdown above to generate schema markup.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
             <Card>
               <h2 className="text-lg font-medium text-gray-900 mb-4">Generate Schema</h2>
               
               <div className="space-y-4">
-                <div>
-                  <Input
-                    id="url"
-                    label="Website URL"
-                    type="text"
-                    placeholder="https://example.com"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                  />
-                </div>
+                {selectedSite && (
+                  <div className="p-3 bg-gray-50 rounded-md">
+                    <p className="text-sm font-medium text-gray-700">Selected Site:</p>
+                    <p className="text-sm text-gray-600">{selectedSite.name}</p>
+                    <p className="text-xs text-gray-500">{selectedSite.url}</p>
+                  </div>
+                )}
                 
                 <div>
                   <label htmlFor="schemaType" className="block text-sm font-medium text-gray-700 mb-1">
@@ -168,6 +193,7 @@ const SchemaGenerator = () => {
                     className="w-full"
                     onClick={handleGenerateSchema}
                     isLoading={isGenerating}
+                    disabled={!selectedSite}
                     icon={<Code2 size={16} />}
                   >
                     Generate Schema
@@ -262,7 +288,7 @@ const SchemaGenerator = () => {
                 <div className="bg-gray-50 p-8 rounded-md text-center">
                   <Code2 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500">
-                    Enter a URL and select a schema type to generate markup.
+                    {selectedSite ? 'Select a schema type to generate markup.' : 'Select a site and schema type to generate markup.'}
                   </p>
                 </div>
               )}
@@ -273,8 +299,8 @@ const SchemaGenerator = () => {
                   <div className="bg-blue-50 p-4 rounded-md">
                     <ol className="list-decimal list-inside space-y-2 text-gray-700 text-sm">
                       <li>Copy the generated schema markup above</li>
-                      <li>Wrap it in a <code className="bg-white px-1 py-0.5 rounded text-xs">&lt;script type="application/ld+json"&gt;</code> tag</li>
-                      <li>Add the script to the <code className="bg-white px-1 py-0.5 rounded text-xs">&lt;head&gt;</code> section of your HTML</li>
+                      <li>Wrap it in a <code className="bg-white px-1 py-0.5 rounded text-xs"><script type="application/ld+json"></code> tag</li>
+                      <li>Add the script to the <code className="bg-white px-1 py-0.5 rounded text-xs"><head></code> section of your HTML</li>
                       <li>Test using the <a href="https://validator.schema.org/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-500 underline">Schema.org Validator</a></li>
                       <li>Monitor your search results for rich snippet improvements</li>
                     </ol>

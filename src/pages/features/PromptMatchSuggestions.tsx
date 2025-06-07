@@ -1,17 +1,35 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquare, Copy, Check, Lightbulb, Target, Zap } from 'lucide-react';
+import { MessageSquare, Copy, Check, Lightbulb, Target, Zap, AlertCircle } from 'lucide-react';
+import { useSites } from '../../contexts/SiteContext';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
+import EmptyState from '../../components/ui/EmptyState';
 import toast from 'react-hot-toast';
 
 const PromptMatchSuggestions = () => {
+  const { selectedSite, sites } = useSites();
   const [content, setContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [analysisType, setAnalysisType] = useState('questions');
+
+  // Show empty state if no sites
+  if (sites.length === 0) {
+    return (
+      <AppLayout>
+        <EmptyState
+          title="No sites added yet"
+          description="Add your first site to start generating prompt suggestions tailored to your content."
+          icon={<MessageSquare size={24} />}
+          actionLabel="Add Your First Site"
+          onAction={() => window.location.href = '/add-site'}
+        />
+      </AppLayout>
+    );
+  }
 
   const analysisTypes = [
     { value: 'questions', label: 'Questions', description: 'Generate questions people ask AI systems' },
@@ -20,9 +38,19 @@ const PromptMatchSuggestions = () => {
     { value: 'featured-snippets', label: 'Featured Snippets', description: 'Content optimized for featured snippets' }
   ];
 
-  const exampleContent = `AI visibility optimization is the process of making your website content more discoverable and understandable to AI systems like ChatGPT, voice assistants, and search engines. This involves implementing schema markup, creating clear content structure, and ensuring your information can be easily cited by AI tools.`;
+  const getExampleContent = () => {
+    if (!selectedSite) return '';
+    
+    const domain = selectedSite.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    return `${selectedSite.name} provides comprehensive services and solutions. Our website at ${domain} offers valuable information and resources for customers looking to improve their business outcomes through innovative approaches and proven methodologies.`;
+  };
 
   const handleGenerateSuggestions = () => {
+    if (!selectedSite) {
+      toast.error('Please select a site first');
+      return;
+    }
+
     if (!content.trim()) {
       toast.error('Please enter some content');
       return;
@@ -32,59 +60,59 @@ const PromptMatchSuggestions = () => {
     
     // Simulate API call with smart generation
     setTimeout(() => {
-      const generatedSuggestions = generateSmartSuggestions(content, analysisType);
+      const generatedSuggestions = generateSmartSuggestions(content, analysisType, selectedSite);
       setSuggestions(generatedSuggestions);
       setIsGenerating(false);
       toast.success('Suggestions generated successfully');
     }, 1500);
   };
 
-  const generateSmartSuggestions = (content: string, type: string) => {
+  const generateSmartSuggestions = (content: string, type: string, site: any) => {
     const contentLower = content.toLowerCase();
-    const isAIRelated = contentLower.includes('ai') || contentLower.includes('artificial intelligence');
-    const isSEORelated = contentLower.includes('seo') || contentLower.includes('search');
-    const isTechRelated = contentLower.includes('tech') || contentLower.includes('software');
+    const siteName = site.name;
+    const domain = site.url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const mainTopic = extractMainTopic(content);
 
     const suggestionTemplates = {
       questions: [
-        `What is ${extractMainTopic(content)}?`,
-        `How does ${extractMainTopic(content)} work?`,
-        `What are the benefits of ${extractMainTopic(content)}?`,
-        `How can I implement ${extractMainTopic(content)}?`,
-        `What are the best practices for ${extractMainTopic(content)}?`,
-        `Why is ${extractMainTopic(content)} important?`,
-        `How much does ${extractMainTopic(content)} cost?`,
-        `What tools are needed for ${extractMainTopic(content)}?`
+        `What services does ${siteName} offer?`,
+        `How does ${mainTopic} work at ${siteName}?`,
+        `What are the benefits of choosing ${siteName}?`,
+        `How can ${siteName} help with ${mainTopic}?`,
+        `What makes ${siteName} different from competitors?`,
+        `How much does ${mainTopic} cost at ${siteName}?`,
+        `What is ${siteName}'s approach to ${mainTopic}?`,
+        `How do I get started with ${siteName}?`
       ],
       headlines: [
-        `The Complete Guide to ${extractMainTopic(content)}`,
-        `${extractMainTopic(content)}: Everything You Need to Know`,
-        `How to Master ${extractMainTopic(content)} in 2025`,
-        `Top 10 ${extractMainTopic(content)} Strategies That Work`,
-        `${extractMainTopic(content)} Best Practices for Beginners`,
-        `Advanced ${extractMainTopic(content)} Techniques`,
-        `${extractMainTopic(content)} vs Traditional Methods`,
-        `The Future of ${extractMainTopic(content)}`
+        `${siteName}: Your Complete Guide to ${mainTopic}`,
+        `Why ${siteName} is the Best Choice for ${mainTopic}`,
+        `${mainTopic} Solutions by ${siteName} - Everything You Need`,
+        `How ${siteName} Revolutionizes ${mainTopic}`,
+        `${siteName}'s Expert Approach to ${mainTopic}`,
+        `The Ultimate ${mainTopic} Experience with ${siteName}`,
+        `${siteName} vs Competitors: ${mainTopic} Comparison`,
+        `Transform Your Business with ${siteName}'s ${mainTopic}`
       ],
       'voice-queries': [
-        `Hey Google, what is ${extractMainTopic(content)}?`,
-        `Alexa, how do I start with ${extractMainTopic(content)}?`,
-        `What are the benefits of ${extractMainTopic(content)}?`,
-        `How much does ${extractMainTopic(content)} cost?`,
-        `Where can I learn about ${extractMainTopic(content)}?`,
-        `What tools do I need for ${extractMainTopic(content)}?`,
-        `Is ${extractMainTopic(content)} worth it?`,
-        `How long does ${extractMainTopic(content)} take?`
+        `Hey Google, what does ${siteName} do?`,
+        `Alexa, how can ${siteName} help me with ${mainTopic}?`,
+        `What are ${siteName}'s services?`,
+        `How much does ${siteName} charge for ${mainTopic}?`,
+        `Where is ${siteName} located?`,
+        `What makes ${siteName} special?`,
+        `Is ${siteName} good for ${mainTopic}?`,
+        `How do I contact ${siteName}?`
       ],
       'featured-snippets': [
-        `${extractMainTopic(content)} definition and explanation`,
-        `Step-by-step ${extractMainTopic(content)} process`,
-        `${extractMainTopic(content)} benefits and advantages`,
-        `${extractMainTopic(content)} cost and pricing`,
-        `${extractMainTopic(content)} tools and resources`,
-        `${extractMainTopic(content)} best practices`,
-        `${extractMainTopic(content)} common mistakes`,
-        `${extractMainTopic(content)} getting started guide`
+        `${siteName} services and solutions overview`,
+        `How ${siteName} helps businesses with ${mainTopic}`,
+        `${siteName} pricing and packages for ${mainTopic}`,
+        `${siteName} customer reviews and testimonials`,
+        `${siteName} contact information and location`,
+        `${siteName} vs competitors comparison`,
+        `${siteName} getting started guide`,
+        `${siteName} frequently asked questions`
       ]
     };
 
@@ -94,7 +122,7 @@ const PromptMatchSuggestions = () => {
   const extractMainTopic = (content: string) => {
     // Simple topic extraction - in a real app, this would be more sophisticated
     const words = content.toLowerCase().split(' ');
-    const commonWords = ['the', 'is', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
+    const commonWords = ['the', 'is', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'our', 'we', 'they', 'this', 'that'];
     const meaningfulWords = words.filter(word => 
       word.length > 3 && 
       !commonWords.includes(word) && 
@@ -105,7 +133,7 @@ const PromptMatchSuggestions = () => {
     if (meaningfulWords.length > 0) {
       return meaningfulWords.slice(0, 2).join(' ');
     }
-    return 'your topic';
+    return 'services';
   };
 
   const copyToClipboard = (index: number, text: string) => {
@@ -134,9 +162,24 @@ const PromptMatchSuggestions = () => {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Prompt Match Suggestions</h1>
           <p className="mt-2 text-gray-600">
-            Get suggestions for headlines and questions that match how users ask AI tools about your content.
+            Get suggestions for headlines and questions that match how users ask AI tools about <span className="font-medium">{selectedSite?.name}</span>.
           </p>
         </div>
+
+        {!selectedSite && (
+          <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <AlertCircle className="h-5 w-5 text-yellow-400" />
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-yellow-700">
+                  Please select a site from the dropdown above to generate tailored prompt suggestions.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-1">
@@ -144,6 +187,14 @@ const PromptMatchSuggestions = () => {
               <h2 className="text-lg font-medium text-gray-900 mb-4">Generate Suggestions</h2>
               
               <div className="space-y-4">
+                {selectedSite && (
+                  <div className="p-3 bg-gray-50 rounded-md">
+                    <p className="text-sm font-medium text-gray-700">Selected Site:</p>
+                    <p className="text-sm text-gray-600">{selectedSite.name}</p>
+                    <p className="text-xs text-gray-500">{selectedSite.url}</p>
+                  </div>
+                )}
+
                 <div>
                   <label htmlFor="analysisType" className="block text-sm font-medium text-gray-700 mb-1">
                     Analysis Type
@@ -179,12 +230,14 @@ const PromptMatchSuggestions = () => {
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                   ></textarea>
-                  <button
-                    onClick={() => setContent(exampleContent)}
-                    className="mt-2 text-sm text-indigo-600 hover:text-indigo-500"
-                  >
-                    Use example content
-                  </button>
+                  {selectedSite && (
+                    <button
+                      onClick={() => setContent(getExampleContent())}
+                      className="mt-2 text-sm text-indigo-600 hover:text-indigo-500"
+                    >
+                      Use example content for {selectedSite.name}
+                    </button>
+                  )}
                 </div>
                 
                 <div>
@@ -193,6 +246,7 @@ const PromptMatchSuggestions = () => {
                     className="w-full"
                     onClick={handleGenerateSuggestions}
                     isLoading={isGenerating}
+                    disabled={!selectedSite}
                     icon={<Target size={16} />}
                   >
                     Generate Suggestions
@@ -279,7 +333,7 @@ const PromptMatchSuggestions = () => {
                 <div className="bg-gray-50 p-8 rounded-md text-center">
                   <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-gray-500">
-                    Enter your content to generate prompt and headline suggestions.
+                    {selectedSite ? 'Enter your content to generate prompt and headline suggestions.' : 'Select a site and enter content to generate suggestions.'}
                   </p>
                 </div>
               )}
