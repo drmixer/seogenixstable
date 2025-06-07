@@ -11,6 +11,13 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
 
+// Citation tracking API keys
+const googleApiKey = Deno.env.get("GOOGLE_API_KEY");
+const googleSearchEngineId = Deno.env.get("GOOGLE_SEARCH_ENGINE_ID");
+const newsApiKey = Deno.env.get("NEWSAPI_KEY");
+const redditClientId = Deno.env.get("REDDIT_CLIENT_ID");
+const redditClientSecret = Deno.env.get("REDDIT_CLIENT_SECRET");
+
 // Validate required environment variables
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing required Supabase environment variables");
@@ -26,148 +33,432 @@ interface RequestBody {
   user_id: string;
 }
 
-// Function to search for citations across different platforms
-async function searchForCitations(url: string, siteName: string): Promise<any[]> {
-  const citations = [];
-  const domain = new URL(url).hostname;
-  
-  console.log(`🔍 Searching for citations of ${domain}...`);
-  
-  // Simulate checking multiple AI platforms for citations
-  // In a real implementation, you would:
-  // 1. Check Google Featured Snippets API
-  // 2. Use web scraping to check AI chat platforms
-  // 3. Monitor social media mentions
-  // 4. Check news aggregators
+interface Citation {
+  source_type: string;
+  snippet_text: string;
+  url: string;
+  detected_at: string;
+  confidence: number;
+  authority_score?: number;
+}
+
+// Check daily API usage limits
+async function checkApiUsage(provider: string, limit: number): Promise<boolean> {
+  const today = new Date().toISOString().split('T')[0];
   
   try {
-    // Simulate Google Featured Snippets check
-    const googleCitation = await checkGoogleFeaturedSnippets(domain, siteName);
-    if (googleCitation) {
-      citations.push(googleCitation);
+    const { data, error } = await supabase
+      .from('api_usage')
+      .select('queries_used')
+      .eq('date', today)
+      .eq('provider', provider)
+      .maybeSingle();
+
+    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows found
+      console.error(`Error checking ${provider} usage:`, error);
+      return false;
+    }
+
+    const currentUsage = data?.queries_used || 0;
+    console.log(`📊 ${provider} usage today: ${currentUsage}/${limit}`);
+    
+    return currentUsage < limit;
+  } catch (error) {
+    console.error(`Error checking ${provider} usage:`, error);
+    return false;
+  }
+}
+
+// Track API usage
+async function trackApiUsage(provider: string, queriesUsed: number = 1): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  
+  try {
+    const { error } = await supabase
+      .from('api_usage')
+      .upsert({
+        date: today,
+        provider,
+        queries_used: queriesUsed,
+        queries_limit: getProviderLimit(provider)
+      }, {
+        onConflict: 'date,provider',
+        ignoreDuplicates: false
+      });
+
+    if (error) {
+      console.error(`Error tracking ${provider} usage:`, error);
+    }
+  } catch (error) {
+    console.error(`Error tracking ${provider} usage:`, error);
+  }
+}
+
+// Get daily limits for each provider
+function getProviderLimit(provider: string): number {
+  const limits = {
+    'google': 100,
+    'news': 33, // 1000/month ÷ 30 days
+    'reddit': 1000
+  };
+  return limits[provider as keyof typeof limits] || 100;
+}
+
+// Search Google Custom Search for citations
+async function searchGoogleCitations(domain: string, siteName: string): Promise<Citation[]> {
+  if (!googleApiKey || !googleSearchEngineId) {
+    console.log("⚠️ Google API credentials not configured");
+    return [];
+  }
+
+  if (!await checkApiUsage('google', 100)) {
+    console.log("⚠️ Google API daily limit reached");
+    return [];
+  }
+
+  const citations: Citation[] = [];
+  
+  try {
+    console.log(`🔍 Searching Google for citations of ${domain}...`);
+    
+    // Search for domain mentions (excluding the site itself)
+    const queries = [
+      `"${domain}" -site:${domain}`,
+      `"${siteName}" -site:${domain}`,
+      `"according to ${siteName}"`,
+      `"${domain} explains"`,
+      `"source: ${domain}"`
+    ];
+
+    let queriesUsed = 0;
+    
+    for (const query of queries.slice(0, 3)) { // Limit to 3 queries to conserve quota
+      try {
+        const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleSearchEngineId}&q=${encodeURIComponent(query)}&num=5`;
+        
+        const response = await fetch(searchUrl, {
+          signal: AbortSignal.timeout(10000)
+        });
+        
+        queriesUsed++;
+        
+        if (!response.ok) {
+          console.error(`Google Search API error: ${response.status} ${response.statusText}`);
+          continue;
+        }
+        
+        const data = await response.json();
+        
+        if (data.items) {
+          for (const item of data.items) {
+            // Check if this looks like a citation
+            const snippet = item.snippet || '';
+            const title = item.title || '';
+            const url = item.link || '';
+            
+            // Look for citation patterns in snippet
+            const citationPatterns = [
+              new RegExp(`according to ${siteName}`, 'i'),
+              new RegExp(`${domain} (states|explains|reports|says)`, 'i'),
+              new RegExp(`source:.*${domain}`, 'i'),
+              new RegExp(`via ${siteName}`, 'i'),
+              new RegExp(`${siteName} (notes|mentions|indicates)`, 'i')
+            ];
+            
+            const hasCitationPattern = citationPatterns.some(pattern => 
+              pattern.test(snippet) || pattern.test(title)
+            );
+            
+            if (hasCitationPattern) {
+              citations.push({
+                source_type: 'Google Search Result',
+                snippet_text: snippet,
+                url: url,
+                detected_at: new Date().toISOString(),
+                confidence: 0.8,
+                authority_score: calculateAuthorityScore(url)
+              });
+              
+              console.log(`✅ Found Google citation: ${url}`);
+            }
+          }
+        }
+        
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+      } catch (error) {
+        console.error(`Error searching Google for "${query}":`, error);
+      }
     }
     
-    // Simulate AI platform checks
-    const aiCitations = await checkAIPlatforms(domain, siteName);
-    citations.push(...aiCitations);
-    
-    // Simulate news/blog mentions
-    const newsCitations = await checkNewsAndBlogs(domain, siteName);
-    citations.push(...newsCitations);
+    // Track usage
+    await trackApiUsage('google', queriesUsed);
     
   } catch (error) {
-    console.error("Error searching for citations:", error);
+    console.error("Error in Google citation search:", error);
   }
   
   return citations;
 }
 
-// Simulate checking Google Featured Snippets
-async function checkGoogleFeaturedSnippets(domain: string, siteName: string): Promise<any | null> {
-  console.log(`🔍 Checking Google Featured Snippets for ${domain}...`);
-  
-  // In a real implementation, you would use Google's Custom Search API
-  // For now, we'll simulate finding a featured snippet
-  
-  const hasSnippet = Math.random() > 0.7; // 30% chance of finding a snippet
-  
-  if (hasSnippet) {
-    return {
-      source_type: "Google Featured Snippet",
-      snippet_text: `According to ${siteName}, this comprehensive guide covers the essential aspects of the topic. The website provides detailed information and practical insights that help users understand the subject matter effectively.`,
-      url: `https://www.google.com/search?q=${encodeURIComponent(siteName + ' guide')}`,
-      detected_at: new Date().toISOString(),
-      confidence: 0.85
-    };
+// Search News API for citations
+async function searchNewsCitations(domain: string, siteName: string): Promise<Citation[]> {
+  if (!newsApiKey) {
+    console.log("⚠️ News API key not configured");
+    return [];
   }
-  
-  return null;
-}
 
-// Simulate checking AI platforms (ChatGPT, Perplexity, etc.)
-async function checkAIPlatforms(domain: string, siteName: string): Promise<any[]> {
-  console.log(`🤖 Checking AI platforms for ${domain}...`);
-  
-  const citations = [];
-  
-  // Simulate ChatGPT citation
-  if (Math.random() > 0.6) { // 40% chance
-    citations.push({
-      source_type: "ChatGPT Response",
-      snippet_text: `As mentioned on ${siteName}, the key principles include comprehensive analysis and strategic implementation. This resource provides valuable insights for understanding the topic in depth.`,
-      url: "https://chat.openai.com",
-      detected_at: new Date().toISOString(),
-      confidence: 0.75
-    });
+  if (!await checkApiUsage('news', 33)) {
+    console.log("⚠️ News API daily limit reached");
+    return [];
   }
+
+  const citations: Citation[] = [];
   
-  // Simulate Perplexity citation
-  if (Math.random() > 0.8) { // 20% chance
-    citations.push({
-      source_type: "Perplexity.ai",
-      snippet_text: `${siteName} explains that effective implementation requires attention to detail and following best practices. The site offers practical guidance for achieving optimal results.`,
-      url: "https://www.perplexity.ai",
-      detected_at: new Date().toISOString(),
-      confidence: 0.80
-    });
-  }
-  
-  // Simulate Claude citation
-  if (Math.random() > 0.85) { // 15% chance
-    citations.push({
-      source_type: "Claude AI",
-      snippet_text: `Based on information from ${siteName}, the methodology involves systematic analysis and careful consideration of various factors to ensure successful outcomes.`,
-      url: "https://claude.ai",
-      detected_at: new Date().toISOString(),
-      confidence: 0.70
-    });
+  try {
+    console.log(`📰 Searching news for citations of ${domain}...`);
+    
+    const queries = [
+      domain,
+      siteName,
+      `"${siteName}"`
+    ];
+
+    let queriesUsed = 0;
+    
+    for (const query of queries.slice(0, 2)) { // Limit to 2 queries
+      try {
+        const searchUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&pageSize=10&apiKey=${newsApiKey}`;
+        
+        const response = await fetch(searchUrl, {
+          signal: AbortSignal.timeout(10000)
+        });
+        
+        queriesUsed++;
+        
+        if (!response.ok) {
+          console.error(`News API error: ${response.status} ${response.statusText}`);
+          continue;
+        }
+        
+        const data = await response.json();
+        
+        if (data.articles) {
+          for (const article of data.articles) {
+            const content = `${article.title} ${article.description} ${article.content || ''}`;
+            
+            // Check if article mentions the domain/site in a citation-like way
+            const citationPatterns = [
+              new RegExp(`according to.*${siteName}`, 'i'),
+              new RegExp(`${domain}.*reports?`, 'i'),
+              new RegExp(`source.*${domain}`, 'i'),
+              new RegExp(`${siteName}.*(states|explains|found|shows)`, 'i')
+            ];
+            
+            const hasCitation = citationPatterns.some(pattern => pattern.test(content));
+            
+            if (hasCitation) {
+              citations.push({
+                source_type: 'News Article',
+                snippet_text: article.description || article.title,
+                url: article.url,
+                detected_at: new Date().toISOString(),
+                confidence: 0.9,
+                authority_score: calculateAuthorityScore(article.url)
+              });
+              
+              console.log(`✅ Found news citation: ${article.url}`);
+            }
+          }
+        }
+        
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`Error searching news for "${query}":`, error);
+      }
+    }
+    
+    // Track usage
+    await trackApiUsage('news', queriesUsed);
+    
+  } catch (error) {
+    console.error("Error in news citation search:", error);
   }
   
   return citations;
 }
 
-// Simulate checking news and blog mentions
-async function checkNewsAndBlogs(domain: string, siteName: string): Promise<any[]> {
-  console.log(`📰 Checking news and blogs for ${domain}...`);
+// Search Reddit for citations
+async function searchRedditCitations(domain: string, siteName: string): Promise<Citation[]> {
+  if (!redditClientId || !redditClientSecret) {
+    console.log("⚠️ Reddit API credentials not configured");
+    return [];
+  }
+
+  if (!await checkApiUsage('reddit', 1000)) {
+    console.log("⚠️ Reddit API daily limit reached");
+    return [];
+  }
+
+  const citations: Citation[] = [];
   
-  const citations = [];
-  
-  // Simulate tech blog mention
-  if (Math.random() > 0.9) { // 10% chance
-    citations.push({
-      source_type: "Tech Blog",
-      snippet_text: `A recent analysis by ${siteName} highlights the importance of staying current with industry trends and implementing proven strategies for success.`,
-      url: `https://techblog.example.com/article-mentioning-${domain.replace('.', '-')}`,
-      detected_at: new Date().toISOString(),
-      confidence: 0.65
+  try {
+    console.log(`🔍 Searching Reddit for citations of ${domain}...`);
+    
+    // Get Reddit access token
+    const tokenResponse = await fetch('https://www.reddit.com/api/v1/access_token', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${btoa(`${redditClientId}:${redditClientSecret}`)}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'SEOgenix/1.0'
+      },
+      body: 'grant_type=client_credentials',
+      signal: AbortSignal.timeout(10000)
     });
+    
+    if (!tokenResponse.ok) {
+      throw new Error(`Reddit auth failed: ${tokenResponse.status}`);
+    }
+    
+    const tokenData = await tokenResponse.json();
+    const accessToken = tokenData.access_token;
+    
+    // Search for domain mentions
+    const queries = [domain, siteName];
+    let queriesUsed = 0;
+    
+    for (const query of queries) {
+      try {
+        const searchUrl = `https://oauth.reddit.com/search?q=${encodeURIComponent(query)}&type=link&sort=new&limit=25`;
+        
+        const response = await fetch(searchUrl, {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'User-Agent': 'SEOgenix/1.0'
+          },
+          signal: AbortSignal.timeout(10000)
+        });
+        
+        queriesUsed++;
+        
+        if (!response.ok) {
+          console.error(`Reddit search error: ${response.status} ${response.statusText}`);
+          continue;
+        }
+        
+        const data = await response.json();
+        
+        if (data.data && data.data.children) {
+          for (const post of data.data.children) {
+            const postData = post.data;
+            const title = postData.title || '';
+            const selftext = postData.selftext || '';
+            const url = postData.url || '';
+            
+            // Check if post mentions domain in a citation-like way
+            const content = `${title} ${selftext}`;
+            const citationPatterns = [
+              new RegExp(`according to.*${siteName}`, 'i'),
+              new RegExp(`source.*${domain}`, 'i'),
+              new RegExp(`${siteName}.*(says|reports|found)`, 'i'),
+              new RegExp(`check out.*${domain}`, 'i')
+            ];
+            
+            const hasCitation = citationPatterns.some(pattern => pattern.test(content)) ||
+                              url.includes(domain);
+            
+            if (hasCitation) {
+              citations.push({
+                source_type: 'Reddit Post',
+                snippet_text: title,
+                url: `https://reddit.com${postData.permalink}`,
+                detected_at: new Date().toISOString(),
+                confidence: 0.7,
+                authority_score: Math.min(postData.score || 0, 100) // Use Reddit score as authority
+              });
+              
+              console.log(`✅ Found Reddit citation: ${postData.permalink}`);
+            }
+          }
+        }
+        
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`Error searching Reddit for "${query}":`, error);
+      }
+    }
+    
+    // Track usage
+    await trackApiUsage('reddit', queriesUsed);
+    
+  } catch (error) {
+    console.error("Error in Reddit citation search:", error);
   }
   
   return citations;
 }
 
-// Function to generate AI assistant response about the site
-async function generateAssistantResponse(url: string, siteName: string): Promise<string> {
+// Calculate authority score based on domain
+function calculateAuthorityScore(url: string): number {
+  try {
+    const domain = new URL(url).hostname.toLowerCase();
+    
+    // High authority domains
+    const highAuthority = [
+      'wikipedia.org', 'github.com', 'stackoverflow.com',
+      'medium.com', 'techcrunch.com', 'wired.com', 'arstechnica.com',
+      'reuters.com', 'bbc.com', 'cnn.com', 'nytimes.com',
+      'harvard.edu', 'mit.edu', 'stanford.edu'
+    ];
+    
+    // Medium authority domains
+    const mediumAuthority = [
+      'reddit.com', 'quora.com', 'linkedin.com',
+      'forbes.com', 'businessinsider.com', 'venturebeat.com'
+    ];
+    
+    if (highAuthority.some(d => domain.includes(d))) return 90;
+    if (mediumAuthority.some(d => domain.includes(d))) return 70;
+    if (domain.endsWith('.edu')) return 85;
+    if (domain.endsWith('.gov')) return 95;
+    if (domain.endsWith('.org')) return 75;
+    
+    return 50; // Default score
+  } catch {
+    return 50;
+  }
+}
+
+// Generate AI assistant response using real citations
+async function generateAssistantResponse(url: string, siteName: string, citations: Citation[]): Promise<string> {
   if (!geminiApiKey || geminiApiKey.includes('your-') || geminiApiKey.length < 35) {
     console.log("🤖 Using fallback assistant response (no valid Gemini API key)");
-    return generateFallbackAssistantResponse(url, siteName);
+    return generateFallbackAssistantResponse(url, siteName, citations);
   }
   
   try {
     console.log("🤖 Generating AI assistant response with Gemini...");
     
+    const citationContext = citations.length > 0 
+      ? `The following citations were found: ${citations.map(c => `${c.source_type}: "${c.snippet_text}"`).join('; ')}`
+      : 'No specific citations were found in this search.';
+    
     const prompt = `You are a helpful AI assistant. A user is asking about the website ${siteName} (${url}). 
+
+${citationContext}
 
 Please provide a natural, helpful response about this website as if you were ChatGPT, Claude, or another AI assistant. The response should:
 1. Be 2-3 sentences long
-2. Sound natural and conversational
+2. Sound natural and conversational  
 3. Mention the website by name
-4. Provide general information about what the site offers
+4. ${citations.length > 0 ? 'Reference that the site has been mentioned in other sources' : 'Provide general information about what the site offers'}
 5. Be positive but realistic
-
-Do not make up specific details about the site's content. Keep it general but helpful.
-
-Example format: "Based on ${siteName}, this website appears to focus on [general topic area]. The site provides [type of content/service] that can help users with [general benefit]. You can find more detailed information by visiting their website directly."
 
 Generate a response now:`;
 
@@ -212,22 +503,27 @@ Generate a response now:`;
   } catch (error) {
     console.error("❌ Error generating AI response:", error);
     console.log("🔄 Falling back to default response");
-    return generateFallbackAssistantResponse(url, siteName);
+    return generateFallbackAssistantResponse(url, siteName, citations);
   }
 }
 
-// Fallback assistant response when AI is not available
-function generateFallbackAssistantResponse(url: string, siteName: string): string {
+// Fallback assistant response
+function generateFallbackAssistantResponse(url: string, siteName: string, citations: Citation[]): string {
   const domain = new URL(url).hostname;
+  
+  if (citations.length > 0) {
+    const highAuthCitations = citations.filter(c => (c.authority_score || 0) > 80);
+    if (highAuthCitations.length > 0) {
+      return `Based on ${siteName}, this website has been referenced in several authoritative sources including ${highAuthCitations[0].source_type.toLowerCase()}. The site appears to provide valuable information that other publications find worth citing. You can explore more at ${domain}.`;
+    } else {
+      return `${siteName} has been mentioned across various online platforms and discussions. The website seems to offer useful content that resonates with different communities. For more details, visit ${domain}.`;
+    }
+  }
   
   const responses = [
     `Based on ${siteName}, this website provides valuable information and resources. The site appears to focus on delivering quality content and services to help users achieve their goals. You can explore more by visiting ${domain} directly.`,
     
-    `${siteName} offers comprehensive information and services in their area of expertise. The website is designed to provide users with helpful resources and guidance. For the most current information, I'd recommend checking out ${domain}.`,
-    
-    `According to ${siteName}, this platform provides useful tools and information for users. The site seems to focus on delivering practical solutions and valuable insights. You can find more details at ${domain}.`,
-    
-    `${siteName} appears to be a resource-focused website that provides information and services to its users. The platform offers various tools and content designed to help visitors achieve their objectives. Visit ${domain} for more information.`
+    `${siteName} offers comprehensive information and services in their area of expertise. The website is designed to provide users with helpful resources and guidance. For the most current information, I'd recommend checking out ${domain}.`
   ];
   
   return responses[Math.floor(Math.random() * responses.length)];
@@ -246,7 +542,7 @@ Deno.serve(async (req) => {
     const body: RequestBody = await req.json();
     const { site_id, url, user_id } = body;
 
-    console.log(`🚀 === STARTING CITATION TRACKING ===`);
+    console.log(`🚀 === STARTING REAL CITATION TRACKING ===`);
     console.log(`📋 Site ID: ${site_id}`);
     console.log(`🌐 URL: ${url}`);
     console.log(`👤 User ID: ${user_id}`);
@@ -304,7 +600,9 @@ Deno.serve(async (req) => {
     }
 
     const siteName = siteData.name;
+    const domain = urlObj.hostname;
     console.log(`📝 Site name: ${siteName}`);
+    console.log(`🌐 Domain: ${domain}`);
 
     // Track usage
     try {
@@ -317,15 +615,44 @@ Deno.serve(async (req) => {
       console.warn("⚠️ Failed to track usage:", usageError);
     }
 
-    // Search for citations
-    console.log("🔍 === SEARCHING FOR CITATIONS ===");
-    const foundCitations = await searchForCitations(url, siteName);
-    console.log(`📊 Found ${foundCitations.length} citations`);
+    // Search for citations across all platforms
+    console.log("🔍 === SEARCHING FOR CITATIONS ACROSS PLATFORMS ===");
+    
+    const [googleCitations, newsCitations, redditCitations] = await Promise.all([
+      searchGoogleCitations(domain, siteName),
+      searchNewsCitations(domain, siteName), 
+      searchRedditCitations(domain, siteName)
+    ]);
+
+    const allFoundCitations = [
+      ...googleCitations,
+      ...newsCitations,
+      ...redditCitations
+    ];
+
+    console.log(`📊 Citation search results:`);
+    console.log(`   Google: ${googleCitations.length} citations`);
+    console.log(`   News: ${newsCitations.length} citations`);
+    console.log(`   Reddit: ${redditCitations.length} citations`);
+    console.log(`   Total: ${allFoundCitations.length} citations`);
 
     // Store new citations in database
     const storedCitations = [];
-    for (const citation of foundCitations) {
+    for (const citation of allFoundCitations) {
       try {
+        // Check if citation already exists
+        const { data: existingCitation } = await supabase
+          .from("citations")
+          .select("id")
+          .eq("site_id", site_id)
+          .eq("url", citation.url)
+          .maybeSingle();
+
+        if (existingCitation) {
+          console.log(`⏭️ Citation already exists: ${citation.url}`);
+          continue;
+        }
+
         const { data: citationData, error: citationError } = await supabase
           .from("citations")
           .insert({
@@ -344,7 +671,7 @@ Deno.serve(async (req) => {
         }
 
         storedCitations.push(citationData);
-        console.log(`✅ Stored citation from ${citation.source_type}`);
+        console.log(`✅ Stored new citation from ${citation.source_type}: ${citation.url}`);
       } catch (error) {
         console.error(`❌ Error processing citation from ${citation.source_type}:`, error);
       }
@@ -352,7 +679,7 @@ Deno.serve(async (req) => {
 
     // Generate AI assistant response
     console.log("🤖 === GENERATING ASSISTANT RESPONSE ===");
-    const assistantResponse = await generateAssistantResponse(url, siteName);
+    const assistantResponse = await generateAssistantResponse(url, siteName, allFoundCitations);
     console.log("✅ Assistant response generated");
 
     // Get all citations for this site (including previously stored ones)
@@ -371,12 +698,20 @@ Deno.serve(async (req) => {
       new_citations_found: storedCitations.length,
       assistant_response: assistantResponse,
       search_completed_at: new Date().toISOString(),
-      platforms_checked: ["Google Featured Snippets", "ChatGPT", "Perplexity.ai", "Claude AI", "Tech Blogs"]
+      platforms_checked: ["Google Custom Search", "News API", "Reddit API"],
+      search_summary: {
+        google_results: googleCitations.length,
+        news_results: newsCitations.length,
+        reddit_results: redditCitations.length,
+        total_new_citations: storedCitations.length,
+        high_authority_citations: allFoundCitations.filter(c => (c.authority_score || 0) > 80).length
+      }
     };
 
-    console.log("🎉 === CITATION TRACKING COMPLETE ===");
-    console.log(`📊 Total citations: ${(allCitations || storedCitations).length}`);
-    console.log(`🆕 New citations: ${storedCitations.length}`);
+    console.log("🎉 === REAL CITATION TRACKING COMPLETE ===");
+    console.log(`📊 Total citations in DB: ${(allCitations || storedCitations).length}`);
+    console.log(`🆕 New citations found: ${storedCitations.length}`);
+    console.log(`⭐ High authority citations: ${response.search_summary.high_authority_citations}`);
 
     return new Response(
       JSON.stringify(response),
