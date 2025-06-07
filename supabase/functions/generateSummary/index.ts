@@ -95,7 +95,7 @@ function isAccessibleUrl(url: string): boolean {
     console.log(`✅ URL appears publicly accessible: ${urlObj.hostname}`);
     return true;
   } catch (error) {
-    console.log(`❌ Invalid URL format: ${error.message}`);
+    console.log(`❌ Invalid URL format: ${error?.message || 'Unknown URL error'}`);
     return false;
   }
 }
@@ -177,7 +177,22 @@ ${mainContent}
     `.trim();
   } catch (error) {
     console.error("❌ Error fetching website:", error);
-    return `Unable to fetch detailed content from ${url}. Error: ${error.message}`;
+    
+    // Enhanced error handling for TypeError: Failed to fetch
+    let errorMessage = "Unknown network error";
+    if (error instanceof TypeError) {
+      if (error.message.includes("Failed to fetch")) {
+        errorMessage = "Network request failed - this could be due to CORS restrictions, network connectivity issues, or the target server being unreachable from the Edge Function environment";
+      } else {
+        errorMessage = error.message || "Network type error occurred";
+      }
+    } else if (error instanceof Error) {
+      errorMessage = error.message;
+    } else {
+      errorMessage = String(error);
+    }
+    
+    return `Unable to fetch detailed content from ${url}. Error: ${errorMessage}`;
   }
 }
 
@@ -362,10 +377,20 @@ Format as a technical reference document.`
   } catch (error) {
     console.error("❌ Error generating summary with Gemini:", error);
     console.error("❌ Error details:", {
-      name: error.name,
-      message: error.message,
-      stack: error.stack
+      name: error?.name || 'Unknown',
+      message: error?.message || 'No error message available',
+      stack: error?.stack || 'No stack trace available'
     });
+    
+    // Enhanced error handling for network-related TypeError
+    if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+      console.error("🌐 Network Error: This appears to be a network connectivity issue when trying to reach the Gemini API. This could be due to:");
+      console.error("   - Network restrictions in the Edge Function environment");
+      console.error("   - Gemini API service being temporarily unavailable");
+      console.error("   - DNS resolution issues");
+      console.error("   - Firewall or proxy blocking the request");
+    }
+    
     return null;
   }
 }
@@ -703,9 +728,10 @@ Deno.serve(async (req) => {
     // Validate URL
     try {
       new URL(url);
-    } catch {
+    } catch (urlError) {
+      const errorMessage = urlError instanceof Error ? urlError.message : "Invalid URL format";
       return new Response(
-        JSON.stringify({ error: "Invalid URL format" }),
+        JSON.stringify({ error: `Invalid URL format: ${errorMessage}` }),
         {
           status: 400,
           headers: {
@@ -722,7 +748,8 @@ Deno.serve(async (req) => {
       websiteContent = await fetchWebsiteContent(url);
     } catch (error) {
       console.warn("⚠️ Could not fetch website content:", error);
-      websiteContent = `Basic analysis for ${url} - content fetch failed: ${error.message}`;
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      websiteContent = `Basic analysis for ${url} - content fetch failed: ${errorMessage}`;
     }
 
     let result;
@@ -755,7 +782,8 @@ Deno.serve(async (req) => {
 
     if (summaryError) {
       console.error("❌ Error storing summary:", summaryError);
-      throw new Error(`Failed to store summary: ${summaryError.message}`);
+      const errorMessage = summaryError.message || "Unknown database error";
+      throw new Error(`Failed to store summary: ${errorMessage}`);
     }
 
     console.log(`✅ Summary stored with ID: ${summaryData.id}`);
@@ -781,13 +809,25 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error("💥 === CRITICAL ERROR IN SUMMARY GENERATION ===");
-    console.error(`❌ Error: ${error.message}`);
-    console.error(`❌ Stack:`, error.stack);
+    
+    // Enhanced error logging and message handling
+    let errorMessage = "Failed to generate summary";
+    let errorDetails = "Unknown error occurred";
+    
+    if (error instanceof Error) {
+      errorMessage = error.message || errorMessage;
+      errorDetails = error.message || errorDetails;
+      console.error(`❌ Error: ${errorMessage}`);
+      console.error(`❌ Stack:`, error.stack || 'No stack trace available');
+    } else {
+      errorDetails = String(error);
+      console.error(`❌ Non-Error object:`, error);
+    }
     
     return new Response(
       JSON.stringify({ 
-        error: "Failed to generate summary",
-        details: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
+        details: errorDetails,
         timestamp: new Date().toISOString()
       }),
       {
