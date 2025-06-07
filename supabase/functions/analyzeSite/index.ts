@@ -6,9 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// Get environment variables with fallbacks for development
-const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_URL");
-const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("VITE_SUPABASE_ANON_KEY");
+// Get environment variables - try multiple possible names
+const supabaseUrl = Deno.env.get("SUPABASE_URL");
+const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY");
 
 console.log("🔧 Environment check:", {
@@ -16,7 +16,10 @@ console.log("🔧 Environment check:", {
   supabaseServiceKey: !!supabaseServiceKey,
   deepseekApiKey: !!deepseekApiKey,
   deepseekKeyLength: deepseekApiKey?.length || 0,
-  deepseekKeyPrefix: deepseekApiKey?.substring(0, 10) + "..." || "none"
+  deepseekKeyPrefix: deepseekApiKey?.substring(0, 10) + "..." || "none",
+  allEnvVars: Object.keys(Deno.env.toObject()).filter(key => 
+    key.includes('DEEPSEEK') || key.includes('API') || key.includes('SUPABASE')
+  )
 });
 
 // Validate required environment variables
@@ -364,6 +367,7 @@ Deno.serve(async (req) => {
       }
     } else {
       console.log("❌ No valid DeepSeek API key configured, using mock data");
+      console.log(`🔍 DeepSeek key status: ${deepseekApiKey ? `Present (${deepseekApiKey.length} chars)` : 'Missing'}`);
       scores = getMockAnalysis(url);
       analysisText = scores.analysis;
       analysisId = scores.analysis_id;
