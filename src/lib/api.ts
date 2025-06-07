@@ -32,7 +32,10 @@ const callEdgeFunction = async (functionName: string, body: any) => {
 
   try {
     const url = `${getBaseUrl()}/${functionName}`;
-    console.log(`Attempting to call Edge Function: ${url}`);
+    console.log(`🚀 Attempting to call Edge Function: ${url}`);
+    console.log(`📤 Request body:`, body);
+    
+    const startTime = Date.now();
     
     const response = await fetch(url, {
       method: 'POST',
@@ -40,14 +43,69 @@ const callEdgeFunction = async (functionName: string, body: any) => {
       body: JSON.stringify(body)
     });
 
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    
+    console.log(`⏱️ Request took ${duration}ms`);
+    console.log(`📥 Response status: ${response.status} ${response.statusText}`);
+    console.log(`📋 Response headers:`, Object.fromEntries(response.headers.entries()));
+
     if (!response.ok) {
-      console.warn(`Edge Function ${functionName} returned ${response.status}: ${response.statusText}, using fallback data`);
+      const errorText = await response.text();
+      console.error(`❌ Edge Function ${functionName} returned ${response.status}: ${response.statusText}`);
+      console.error(`💥 Error response body:`, errorText);
+      
+      // Try to parse error as JSON for better debugging
+      try {
+        const errorJson = JSON.parse(errorText);
+        console.error(`🔍 Parsed error:`, errorJson);
+      } catch {
+        console.error(`📝 Raw error text:`, errorText);
+      }
+      
+      console.warn('Using fallback data due to error response');
       return getFallbackData(functionName, body);
     }
 
-    return await response.json();
+    const responseText = await response.text();
+    console.log(`📄 Response body length: ${responseText.length} characters`);
+    console.log(`🔍 First 500 chars of response:`, responseText.substring(0, 500));
+    
+    try {
+      const jsonResponse = JSON.parse(responseText);
+      console.log(`✅ Successfully parsed JSON response`);
+      
+      // Log key information from the response
+      if (jsonResponse.usingRealData !== undefined) {
+        console.log(`🎯 REAL DATA CONFIRMED: ${jsonResponse.usingRealData}`);
+        console.log(`📊 Data Source: ${jsonResponse.dataSource}`);
+        console.log(`🆔 Analysis ID: ${jsonResponse.analysisId}`);
+      }
+      
+      if (jsonResponse.audit) {
+        console.log(`📈 Audit scores:`, {
+          ai_visibility: jsonResponse.audit.ai_visibility_score,
+          schema: jsonResponse.audit.schema_score,
+          semantic: jsonResponse.audit.semantic_score,
+          citation: jsonResponse.audit.citation_score,
+          technical: jsonResponse.audit.technical_seo_score
+        });
+      }
+      
+      return jsonResponse;
+    } catch (parseError) {
+      console.error(`❌ Failed to parse JSON response:`, parseError);
+      console.error(`📝 Raw response:`, responseText);
+      console.warn('Using fallback data due to JSON parse error');
+      return getFallbackData(functionName, body);
+    }
   } catch (error) {
-    console.warn(`Edge Function ${functionName} failed with error:`, error);
+    console.error(`💥 Edge Function ${functionName} failed with error:`, error);
+    console.error(`🔍 Error details:`, {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
     console.warn('Using fallback data instead');
     return getFallbackData(functionName, body);
   }
@@ -55,8 +113,11 @@ const callEdgeFunction = async (functionName: string, body: any) => {
 
 // Helper function to get fallback data
 const getFallbackData = (functionName: string, body: any) => {
+  console.log(`🤖 MOCK DATA USED for function: ${functionName}`);
+  
   switch (functionName) {
     case 'analyzeSite':
+      const mockId = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       return {
         audit: {
           id: crypto.randomUUID(),
@@ -89,7 +150,11 @@ const getFallbackData = (functionName: string, body: any) => {
             }, null, 2),
             created_at: new Date().toISOString()
           }
-        ]
+        ],
+        usingRealData: false,
+        dataSource: "Mock Data Fallback",
+        analysisId: mockId,
+        analysis: "⚠️ This is mock data because the Edge Function was not available or failed to respond."
       };
     default:
       throw new Error(`No fallback data available for function: ${functionName}`);
@@ -214,12 +279,12 @@ export const siteApi = {
 // API functions for audits
 export const auditApi = {
   runAudit: async (siteId: string, url: string) => {
-    console.log('Running audit for site:', siteId, 'URL:', url);
-    console.log('Supabase configured:', isSupabaseConfigured());
+    console.log('🔍 Running audit for site:', siteId, 'URL:', url);
+    console.log('⚙️ Supabase configured:', isSupabaseConfigured());
     
     // Always use fallback data if Supabase is not configured
     if (!isSupabaseConfigured()) {
-      console.log('Using fallback data due to Supabase configuration');
+      console.log('⚠️ Using fallback data due to Supabase configuration');
       return getFallbackData('analyzeSite', { site_id: siteId, url });
     }
 
@@ -227,18 +292,23 @@ export const auditApi = {
       // Get the current user's ID
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        console.warn('User not authenticated, using fallback data');
+        console.warn('❌ User not authenticated, using fallback data');
         return getFallbackData('analyzeSite', { site_id: siteId, url });
       }
 
+      console.log('👤 User authenticated:', user.id);
+
       // Call the analyzeSite edge function with user_id
-      return await callEdgeFunction('analyzeSite', { 
+      const result = await callEdgeFunction('analyzeSite', { 
         site_id: siteId, 
         url,
         user_id: user.id 
       });
+      
+      console.log('🎉 Audit completed successfully');
+      return result;
     } catch (error) {
-      console.warn('Error in runAudit, using fallback data:', error);
+      console.error('💥 Error in runAudit, using fallback data:', error);
       return getFallbackData('analyzeSite', { site_id: siteId, url });
     }
   },
