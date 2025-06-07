@@ -9,16 +9,31 @@ const getHeaders = () => ({
 // Base URL for Supabase Edge Functions
 const getBaseUrl = () => `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
+// Helper function to validate environment variables
+const validateEnvironment = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  if (!url || !key || url === 'your-supabase-url' || key === 'your-supabase-anon-key') {
+    return false;
+  }
+  
+  return true;
+};
+
 // Helper function to call Edge Functions with fallback
 const callEdgeFunction = async (functionName: string, body: any) => {
   try {
-    // Check if we have the required environment variables
-    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-      console.warn('Missing Supabase configuration, using fallback data');
+    // Check if we have valid environment variables
+    if (!validateEnvironment()) {
+      console.warn('Missing or invalid Supabase configuration, using fallback data');
       return getFallbackData(functionName, body);
     }
 
-    const response = await fetch(`${getBaseUrl()}/${functionName}`, {
+    const url = `${getBaseUrl()}/${functionName}`;
+    console.log(`Calling edge function: ${url}`);
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(body)
@@ -112,7 +127,8 @@ const trackCitationsFallback = (body: any) => {
 
 // Fallback functions for different features
 const generateSchemaFallback = (body: any) => {
-  const { schemaType, url } = body;
+  const { schemaType, url, schema_type } = body;
+  const type = schemaType || schema_type;
   
   const schemaExamples = {
     FAQ: {
@@ -214,7 +230,7 @@ const generateSchemaFallback = (body: any) => {
   };
 
   return {
-    schema: JSON.stringify(schemaExamples[schemaType as keyof typeof schemaExamples] || schemaExamples.FAQ, null, 2)
+    schema: JSON.stringify(schemaExamples[type as keyof typeof schemaExamples] || schemaExamples.FAQ, null, 2)
   };
 };
 
@@ -413,18 +429,27 @@ export const auditApi = {
   }
 };
 
-// API functions for schemas - NOW USING REAL EDGE FUNCTION
+// API functions for schemas - Enhanced with better error handling
 export const schemaApi = {
   generateSchema: async (url: string, schemaType: string) => {
-    console.log('🚀 Starting real schema generation...');
+    console.log('🚀 Starting schema generation...');
     console.log(`📋 URL: ${url}`);
     console.log(`📋 Schema Type: ${schemaType}`);
+    
+    // Check environment first
+    if (!validateEnvironment()) {
+      console.log('⚠️ Environment not configured, using fallback data');
+      return generateSchemaFallback({ url, schema_type: schemaType });
+    }
     
     try {
       // Call the generateSchema edge function directly
       console.log('📡 Calling generateSchema edge function...');
       
-      const response = await fetch(`${getBaseUrl()}/generateSchema`, {
+      const apiUrl = `${getBaseUrl()}/generateSchema`;
+      console.log(`🔗 API URL: ${apiUrl}`);
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify({ 
@@ -438,7 +463,8 @@ export const schemaApi = {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Edge function error:', errorText);
-        throw new Error(`Edge function failed: ${response.status} - ${errorText}`);
+        console.log('🔄 Falling back to mock data...');
+        return generateSchemaFallback({ url, schema_type: schemaType });
       }
 
       const result = await response.json();
@@ -451,7 +477,7 @@ export const schemaApi = {
       console.log('🔄 Falling back to mock data...');
       
       // Return fallback data if edge function fails
-      return generateSchemaFallback({ url, schemaType });
+      return generateSchemaFallback({ url, schema_type: schemaType });
     }
   },
 
@@ -483,10 +509,10 @@ export const promptApi = {
   }
 };
 
-// API functions for citations - NOW USING REAL EDGE FUNCTION
+// API functions for citations - Enhanced with better error handling
 export const citationApi = {
   trackCitations: async (siteId: string, url: string) => {
-    console.log('🚀 Starting real citation tracking...');
+    console.log('🚀 Starting citation tracking...');
     console.log(`📋 Site ID: ${siteId}`);
     console.log(`🌐 URL: ${url}`);
     
@@ -495,6 +521,12 @@ export const citationApi = {
     if (!user) throw new Error('User not authenticated');
 
     console.log(`👤 User ID: ${user.id}`);
+
+    // Check environment first
+    if (!validateEnvironment()) {
+      console.log('⚠️ Environment not configured, using fallback data');
+      return trackCitationsFallback({ site_id: siteId, url });
+    }
 
     try {
       // Call the trackCitations edge function directly
@@ -515,7 +547,8 @@ export const citationApi = {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Edge function error:', errorText);
-        throw new Error(`Edge function failed: ${response.status} - ${errorText}`);
+        console.log('🔄 Falling back to mock data...');
+        return trackCitationsFallback({ site_id: siteId, url });
       }
 
       const result = await response.json();

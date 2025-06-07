@@ -5,13 +5,27 @@ import type { Database } from '../types/supabase';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'your-supabase-url' || supabaseAnonKey === 'your-supabase-anon-key') {
-  console.warn('Supabase environment variables are not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file.');
+// Validate environment variables
+const isValidConfig = () => {
+  return supabaseUrl && 
+         supabaseAnonKey && 
+         supabaseUrl !== 'your-supabase-url' && 
+         supabaseAnonKey !== 'your-supabase-anon-key' &&
+         supabaseUrl.startsWith('https://') &&
+         supabaseAnonKey.length > 20;
+};
+
+if (!isValidConfig()) {
+  console.warn('⚠️ Supabase environment variables are not properly configured.');
+  console.warn('Current VITE_SUPABASE_URL:', supabaseUrl);
+  console.warn('Current VITE_SUPABASE_ANON_KEY length:', supabaseAnonKey.length);
+  console.warn('Please ensure your .env file contains valid Supabase credentials.');
 }
 
 // Create a mock client if environment variables are not properly configured
 const createSupabaseClient = () => {
-  if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'your-supabase-url' || supabaseAnonKey === 'your-supabase-anon-key') {
+  if (!isValidConfig()) {
+    console.warn('🔄 Using mock Supabase client due to invalid configuration');
     // Return a mock client that prevents crashes
     return {
       auth: {
@@ -19,6 +33,7 @@ const createSupabaseClient = () => {
         signInWithPassword: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
         signOut: () => Promise.resolve({ error: null }),
         getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+        getUser: () => Promise.resolve({ data: { user: null }, error: null }),
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
       },
       from: () => ({
@@ -26,10 +41,17 @@ const createSupabaseClient = () => {
         insert: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
         update: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
         delete: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
+        eq: function() { return this; },
+        single: function() { return this; },
+        order: function() { return this; },
+        limit: function() { return this; },
+        maybeSingle: function() { return this; },
       }),
+      rpc: () => Promise.resolve({ data: null, error: { message: 'Supabase not configured' } }),
     } as any;
   }
   
+  console.log('✅ Creating real Supabase client with valid configuration');
   return createClient<Database>(supabaseUrl, supabaseAnonKey);
 };
 
