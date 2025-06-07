@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
     // Skip usage tracking for now to avoid constraint issues
     console.log("Skipping usage tracking for user:", user_id);
 
-    // Call DeepSeek API
+    // Call DeepSeek API using the correct format
     const deepseekResponse = await fetch(
       "https://api.deepseek.com/v1/chat/completions",
       {
@@ -86,29 +86,38 @@ Deno.serve(async (req) => {
           "Authorization": `Bearer ${deepseekApiKey}`
         },
         body: JSON.stringify({
-          model: "DeepSeek-R1-0528",
-          messages: [{
-            role: "user",
-            content: `Analyze this website: ${url}
+          model: "deepseek-reasoner",
+          messages: [
+            {
+              role: "system",
+              content: "You are an AI visibility expert who analyzes websites for their compatibility with AI systems like ChatGPT, voice assistants, and other AI tools."
+            },
+            {
+              role: "user",
+              content: `Analyze this website for AI visibility: ${url}
 
-Please provide a comprehensive analysis focusing on:
-1. AI Visibility Score (0-100)
-2. Schema Implementation Score (0-100)
-3. Semantic Structure Score (0-100)
-4. Citation Potential Score (0-100)
-5. Technical SEO Score (0-100)
+Please provide scores (0-100) for these 5 categories:
 
-For each score, consider:
-- AI Visibility: How well can AI systems understand and process the content
-- Schema: Quality and coverage of structured data markup
-- Semantic: Clarity of content organization and entity relationships
-- Citation: Likelihood of being cited by AI systems
-- Technical: Basic SEO factors that affect AI crawling
+1. AI Visibility Score: How well can AI systems understand and process the content
+2. Schema Score: Quality and coverage of structured data markup  
+3. Semantic Score: Clarity of content organization and entity relationships
+4. Citation Score: Likelihood of being cited by AI systems
+5. Technical SEO Score: Basic SEO factors that affect AI crawling
 
-Return the scores in a structured format with brief explanations for each score.`
-          }],
-          max_tokens: 1000,
-          temperature: 0.7
+For each score, provide a brief explanation of what was evaluated. Return your response in this exact JSON format:
+
+{
+  "ai_visibility_score": 75,
+  "schema_score": 60,
+  "semantic_score": 80,
+  "citation_score": 65,
+  "technical_seo_score": 70,
+  "analysis": "Brief overall analysis here"
+}`
+            }
+          ],
+          max_tokens: 1500,
+          temperature: 0.3
         })
       }
     );
@@ -122,24 +131,39 @@ Return the scores in a structured format with brief explanations for each score.
     const deepseekData = await deepseekResponse.json();
     const analysisText = deepseekData.choices[0].message.content;
 
-    // Extract scores from the analysis text
-    // For now, we'll use random scores since parsing the AI response would need more complex logic
-    const aiVisibilityScore = Math.floor(Math.random() * 40) + 60;
-    const schemaScore = Math.floor(Math.random() * 40) + 60;
-    const semanticScore = Math.floor(Math.random() * 40) + 60;
-    const citationScore = Math.floor(Math.random() * 40) + 60;
-    const technicalSeoScore = Math.floor(Math.random() * 40) + 60;
+    // Try to parse JSON from the response, fallback to random scores if parsing fails
+    let scores;
+    try {
+      // Extract JSON from the response (in case there's extra text)
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        scores = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error("No JSON found in response");
+      }
+    } catch (parseError) {
+      console.warn("Failed to parse AI response, using fallback scores:", parseError);
+      // Fallback to random scores
+      scores = {
+        ai_visibility_score: Math.floor(Math.random() * 40) + 60,
+        schema_score: Math.floor(Math.random() * 40) + 60,
+        semantic_score: Math.floor(Math.random() * 40) + 60,
+        citation_score: Math.floor(Math.random() * 40) + 60,
+        technical_seo_score: Math.floor(Math.random() * 40) + 60,
+        analysis: "Analysis completed using fallback scoring due to parsing issues."
+      };
+    }
 
     // Create audit with service role client
     const { data: auditData, error: auditError } = await supabase
       .from("audits")
       .insert({
         site_id,
-        ai_visibility_score: aiVisibilityScore,
-        schema_score: schemaScore,
-        semantic_score: semanticScore,
-        citation_score: citationScore,
-        technical_seo_score: technicalSeoScore,
+        ai_visibility_score: scores.ai_visibility_score,
+        schema_score: scores.schema_score,
+        semantic_score: scores.semantic_score,
+        citation_score: scores.citation_score,
+        technical_seo_score: scores.technical_seo_score,
       })
       .select()
       .single();
@@ -175,7 +199,7 @@ Return the scores in a structured format with brief explanations for each score.
       JSON.stringify({
         audit: auditData,
         schemas,
-        analysis: analysisText
+        analysis: scores.analysis || analysisText
       }),
       {
         status: 200,
