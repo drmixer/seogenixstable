@@ -406,41 +406,65 @@ Deno.serve(async (req) => {
       websiteContent = `Basic analysis for ${url} - content fetch failed: ${fetchError.message}`;
     }
 
-    // IMPROVED API KEY VALIDATION
-    // Check if DeepSeek API key is properly configured
-    console.log("🔑 DeepSeek API Key Check:");
-    console.log(`   📋 Key Present: ${!!deepseekApiKey}`);
-    console.log(`   📏 Key Length: ${deepseekApiKey?.length || 0} characters`);
-    console.log(`   🔤 Key Prefix: ${deepseekApiKey?.substring(0, 10) || 'none'}...`);
-    console.log(`   🔤 Key Suffix: ...${deepseekApiKey?.substring(deepseekApiKey.length - 6) || 'none'}`);
+    // COMPREHENSIVE API KEY VALIDATION WITH DETAILED DEBUGGING
+    console.log("🔑 === DEEPSEEK API KEY VALIDATION ===");
+    console.log(`📋 Key Present: ${!!deepseekApiKey}`);
     
-    // More flexible validation - DeepSeek keys might not start with 'sk-'
+    if (deepseekApiKey) {
+      console.log(`📏 Key Length: ${deepseekApiKey.length} characters`);
+      console.log(`🔤 Key First 20 chars: "${deepseekApiKey.substring(0, 20)}"`);
+      console.log(`🔤 Key Last 10 chars: "...${deepseekApiKey.substring(deepseekApiKey.length - 10)}"`);
+      console.log(`🔍 Key contains spaces: ${deepseekApiKey.includes(' ')}`);
+      console.log(`🔍 Key contains newlines: ${deepseekApiKey.includes('\n')}`);
+      console.log(`🔍 Key is trimmed: ${deepseekApiKey === deepseekApiKey.trim()}`);
+      console.log(`🔍 Key contains 'your-': ${deepseekApiKey.includes('your-')}`);
+      console.log(`🔍 Key contains 'example': ${deepseekApiKey.includes('example')}`);
+      console.log(`🔍 Key contains 'placeholder': ${deepseekApiKey.includes('placeholder')}`);
+      console.log(`🔍 Key contains 'test': ${deepseekApiKey.includes('test')}`);
+      console.log(`🔍 Key contains 'demo': ${deepseekApiKey.includes('demo')}`);
+    } else {
+      console.log("❌ No API key found in any environment variable");
+      console.log("🔍 Checked variables: DEEPSEEK_API_KEY, DEEPSEEK_KEY, DEEP_SEEK_API_KEY, DEEP_SEEK_KEY");
+    }
+    
+    // SIMPLIFIED VALIDATION - Just check if key exists and has reasonable length
     const hasValidApiKey = deepseekApiKey && 
-                          deepseekApiKey.length >= 20 && 
-                          deepseekApiKey.trim() !== '' &&
+                          deepseekApiKey.trim().length >= 10 && 
                           !deepseekApiKey.includes('your-') &&
-                          !deepseekApiKey.includes('example');
+                          !deepseekApiKey.includes('example') &&
+                          !deepseekApiKey.includes('placeholder') &&
+                          !deepseekApiKey.includes('test-key') &&
+                          !deepseekApiKey.includes('demo-key');
     
-    console.log(`   ✅ Key Valid: ${hasValidApiKey}`);
+    console.log(`✅ Final Validation Result: ${hasValidApiKey}`);
+    console.log("🔑 === END VALIDATION ===");
     
     if (!hasValidApiKey) {
-      console.log("❌ API Key Validation Failed:");
+      console.log("❌ API Key Validation Failed - Detailed Reasons:");
       if (!deepseekApiKey) {
-        console.log("   - Key is missing entirely");
-      } else if (deepseekApiKey.length < 20) {
-        console.log(`   - Key too short (${deepseekApiKey.length} chars, need 20+)`);
-      } else if (deepseekApiKey.includes('your-') || deepseekApiKey.includes('example')) {
-        console.log("   - Key appears to be a placeholder");
+        console.log("   ❌ Key is missing entirely");
+      } else if (deepseekApiKey.trim().length < 10) {
+        console.log(`   ❌ Key too short (${deepseekApiKey.trim().length} chars, need 10+)`);
+      } else if (deepseekApiKey.includes('your-')) {
+        console.log("   ❌ Key contains 'your-' (placeholder pattern)");
+      } else if (deepseekApiKey.includes('example')) {
+        console.log("   ❌ Key contains 'example' (placeholder pattern)");
+      } else if (deepseekApiKey.includes('placeholder')) {
+        console.log("   ❌ Key contains 'placeholder'");
+      } else if (deepseekApiKey.includes('test-key')) {
+        console.log("   ❌ Key contains 'test-key'");
+      } else if (deepseekApiKey.includes('demo-key')) {
+        console.log("   ❌ Key contains 'demo-key'");
       } else {
-        console.log("   - Key failed other validation checks");
+        console.log("   ❌ Key failed validation for unknown reason");
       }
     }
 
     // Try to get real analysis from DeepSeek
     if (hasValidApiKey) {
       try {
-        console.log("🤖 Attempting DeepSeek API analysis...");
-        console.log(`🔑 API Key Status: Valid (${deepseekApiKey.length} characters)`);
+        console.log("🤖 ✅ API KEY VALID - Attempting DeepSeek API analysis...");
+        console.log(`🔑 Using key: ${deepseekApiKey.substring(0, 8)}...${deepseekApiKey.substring(deepseekApiKey.length - 4)}`);
         
         scores = await analyzeWithDeepSeek(url, websiteContent);
         analysisText = scores.analysis;
@@ -448,7 +472,7 @@ Deno.serve(async (req) => {
         usingRealData = true;
         dataSource = "DeepSeek API";
         
-        console.log("✅ SUCCESS: Real analysis from DeepSeek API completed!");
+        console.log("🎉 ✅ SUCCESS: Real analysis from DeepSeek API completed!");
         console.log(`🆔 Analysis ID: ${analysisId}`);
         console.log(`📊 Data Source: ${scores.data_source || 'DeepSeek API'}`);
       } catch (apiError) {
@@ -462,7 +486,7 @@ Deno.serve(async (req) => {
         dataSource = "Enhanced Mock (API Failed)";
       }
     } else {
-      console.log("❌ DeepSeek API key not properly configured");
+      console.log("❌ DeepSeek API key validation failed");
       console.log("🔄 Using enhanced mock analysis based on website content...");
       
       scores = getEnhancedMockAnalysis(url, websiteContent);
