@@ -184,8 +184,19 @@ Follow standard press release format.`
       })
     })
 
+    // Check if response is ok and has proper content type
     if (!response.ok) {
-      return generateFallbackContent(topic, contentType, industry, audience, tone)
+      const errorText = await response.text()
+      console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
+    }
+
+    // Check content type before parsing JSON
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      const responseText = await response.text()
+      console.error('❌ Gemini API returned non-JSON response:', responseText)
+      throw new Error(`Gemini API returned unexpected content type: ${contentType}`)
     }
 
     const data = await response.json()
@@ -193,11 +204,12 @@ Follow standard press release format.`
     if (data.candidates && data.candidates[0] && data.candidates[0].content) {
       return data.candidates[0].content.parts[0].text
     } else {
-      return generateFallbackContent(topic, contentType, industry, audience, tone)
+      console.error('❌ Gemini API returned unexpected response structure:', data)
+      throw new Error('Invalid response structure from Gemini API')
     }
   } catch (error) {
     console.error('❌ Gemini API error:', error)
-    return generateFallbackContent(topic, contentType, industry, audience, tone)
+    throw new Error(`Gemini API request failed: ${error.message}`)
   }
 }
 

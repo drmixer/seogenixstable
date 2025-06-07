@@ -130,8 +130,19 @@ Make sure all suggestions are relevant, natural-sounding, and optimized for AI u
       })
     })
 
+    // Check if response is ok and has proper content type
     if (!response.ok) {
-      return generateFallbackPrompts(content, industry, audience, contentType)
+      const errorText = await response.text()
+      console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
+    }
+
+    // Check content type before parsing JSON
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      const responseText = await response.text()
+      console.error('❌ Gemini API returned non-JSON response:', responseText)
+      throw new Error(`Gemini API returned unexpected content type: ${contentType}`)
     }
 
     const data = await response.json()

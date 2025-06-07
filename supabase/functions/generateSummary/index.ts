@@ -184,31 +184,48 @@ Write as technical overview in 400-500 words.`
 
   const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 2048,
-      }
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        }
+      })
     })
-  })
 
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status}`)
-  }
+    // Check if response is ok and has proper content type
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
+    }
 
-  const data = await response.json()
-  
-  if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-    return data.candidates[0].content.parts[0].text
+    // Check content type before parsing JSON
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      const responseText = await response.text()
+      console.error('❌ Gemini API returned non-JSON response:', responseText)
+      throw new Error(`Gemini API returned unexpected content type: ${contentType}`)
+    }
+
+    const data = await response.json()
+    
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      return data.candidates[0].content.parts[0].text
+    }
+    
+    console.error('❌ Gemini API returned unexpected response structure:', data)
+    throw new Error('Invalid response structure from Gemini API')
+  } catch (error) {
+    console.error('❌ Gemini API request failed:', error)
+    throw new Error(`Gemini API request failed: ${error.message}`)
   }
-  
-  throw new Error('Invalid response from Gemini API')
 }
 
 function generateEnhancedTemplate(url: string, summaryType: string, companyName: string): string {
