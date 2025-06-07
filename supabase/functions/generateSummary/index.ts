@@ -11,6 +11,12 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
 
+// Enhanced logging for environment variables
+console.log("🔧 Environment Variables Check:");
+console.log(`📍 SUPABASE_URL: ${supabaseUrl ? 'Set' : 'Missing'}`);
+console.log(`🔑 SUPABASE_SERVICE_ROLE_KEY: ${supabaseServiceKey ? 'Set (length: ' + supabaseServiceKey.length + ')' : 'Missing'}`);
+console.log(`🤖 GEMINI_API_KEY: ${geminiApiKey ? 'Set (length: ' + geminiApiKey.length + ', starts with: ' + geminiApiKey.substring(0, 6) + '...)' : 'Missing'}`);
+
 // Validate required environment variables
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing required Supabase environment variables");
@@ -30,36 +36,79 @@ interface RequestBody {
 // Function to validate Gemini API key
 function isValidGeminiApiKey(apiKey: string | undefined): boolean {
   if (!apiKey) {
+    console.log("❌ Gemini API key is undefined or null");
     return false;
   }
   
+  // Trim whitespace
+  apiKey = apiKey.trim();
+  
   // Check for placeholder values
   if (apiKey.includes('your-') || apiKey.includes('YOUR_') || apiKey.includes('placeholder')) {
+    console.log("❌ Gemini API key appears to be a placeholder");
     return false;
   }
   
   // Check minimum length (Gemini API keys are typically 39+ characters)
   if (apiKey.length < 35) {
+    console.log(`❌ Gemini API key too short: ${apiKey.length} characters`);
     return false;
   }
   
   // Check for common invalid patterns
   if (apiKey === 'undefined' || apiKey === 'null' || apiKey === '') {
+    console.log("❌ Gemini API key is invalid string");
     return false;
   }
   
   // Gemini API keys typically start with specific patterns
   if (!apiKey.startsWith('AIza')) {
+    console.log(`❌ Gemini API key doesn't start with expected pattern: ${apiKey.substring(0, 6)}`);
     return false;
   }
   
+  console.log("✅ Gemini API key appears valid");
   return true;
+}
+
+// Function to validate URL accessibility
+function isAccessibleUrl(url: string): boolean {
+  try {
+    const urlObj = new URL(url);
+    
+    // Check for localhost or private network addresses
+    if (urlObj.hostname === 'localhost' || 
+        urlObj.hostname === '127.0.0.1' ||
+        urlObj.hostname.startsWith('192.168.') ||
+        urlObj.hostname.startsWith('10.') ||
+        urlObj.hostname.startsWith('172.')) {
+      console.log(`❌ URL is not publicly accessible: ${urlObj.hostname}`);
+      return false;
+    }
+    
+    // Check for valid protocols
+    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      console.log(`❌ Invalid protocol: ${urlObj.protocol}`);
+      return false;
+    }
+    
+    console.log(`✅ URL appears publicly accessible: ${urlObj.hostname}`);
+    return true;
+  } catch (error) {
+    console.log(`❌ Invalid URL format: ${error.message}`);
+    return false;
+  }
 }
 
 // Function to fetch and analyze website content
 async function fetchWebsiteContent(url: string): Promise<string> {
   try {
     console.log(`🌐 Fetching content from: ${url}`);
+    
+    // Validate URL accessibility first
+    if (!isAccessibleUrl(url)) {
+      throw new Error(`URL is not publicly accessible: ${url}`);
+    }
     
     const response = await fetch(url, {
       headers: {
@@ -138,6 +187,8 @@ async function generateSummaryWithGemini(
   summaryType: string,
   websiteContent: string
 ): Promise<any> {
+  console.log("🤖 Checking Gemini API configuration...");
+  
   if (!isValidGeminiApiKey(geminiApiKey)) {
     console.log("⚠️ Gemini API key not configured or invalid, using enhanced fallback");
     return null;
@@ -258,33 +309,38 @@ Format as a technical reference document.`
     };
 
     const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
+    
+    console.log(`🌐 Making request to Gemini API...`);
+    console.log(`📍 URL: ${geminiUrl.substring(0, 80)}...`);
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.3,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048,
-          }
-        }),
-        signal: AbortSignal.timeout(30000)
-      }
-    );
+    const response = await fetch(geminiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.3,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        }
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    console.log(`📡 Gemini API response status: ${response.status}`);
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ Gemini API error: ${response.status} - ${errorText}`);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -299,11 +355,17 @@ Format as a technical reference document.`
         generated_at: new Date().toISOString()
       };
     } else {
+      console.error("❌ Invalid response format from Gemini:", data);
       throw new Error("Invalid response format from Gemini");
     }
     
   } catch (error) {
     console.error("❌ Error generating summary with Gemini:", error);
+    console.error("❌ Error details:", {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
     return null;
   }
 }
