@@ -9,15 +9,28 @@ const getHeaders = () => ({
 // Base URL for Supabase Edge Functions
 const getBaseUrl = () => `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
 
+// Check if Supabase is properly configured
+const isSupabaseConfigured = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  return url && 
+         key && 
+         url !== 'your-supabase-url' && 
+         key !== 'your-supabase-anon-key' &&
+         url.startsWith('https://') &&
+         url.includes('supabase.co');
+};
+
 // Helper function to call Edge Functions with fallback
 const callEdgeFunction = async (functionName: string, body: any) => {
-  try {
-    // Check if we have the required environment variables
-    if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY) {
-      console.warn('Missing Supabase configuration, using fallback data');
-      return getFallbackData(functionName, body);
-    }
+  // Check if Supabase is configured before making the request
+  if (!isSupabaseConfigured()) {
+    console.warn('Supabase not configured, using fallback data');
+    return getFallbackData(functionName, body);
+  }
 
+  try {
     const response = await fetch(`${getBaseUrl()}/${functionName}`, {
       method: 'POST',
       headers: getHeaders(),
@@ -82,6 +95,10 @@ const getFallbackData = (functionName: string, body: any) => {
 // API functions for subscription management
 export const subscriptionApi = {
   getCurrentSubscription: async (userId: string) => {
+    if (!isSupabaseConfigured()) {
+      return null;
+    }
+    
     const { data, error } = await supabase
       .from('subscriptions')
       .select('*')
@@ -93,6 +110,15 @@ export const subscriptionApi = {
   },
   
   getUsage: async (userId: string) => {
+    if (!isSupabaseConfigured()) {
+      return {
+        citations_used: 0,
+        ai_content_used: 0,
+        last_audit_date: null,
+        reset_date: new Date().toISOString()
+      };
+    }
+    
     const { data, error } = await supabase
       .from('subscription_usage')
       .select('*')
@@ -104,6 +130,10 @@ export const subscriptionApi = {
   },
   
   updateUsage: async (userId: string, type: 'citations' | 'ai_content' | 'audits') => {
+    if (!isSupabaseConfigured()) {
+      return null;
+    }
+    
     const { data, error } = await supabase
       .rpc('increment_usage', {
         p_user_id: userId,
@@ -118,6 +148,10 @@ export const subscriptionApi = {
 // API functions for sites
 export const siteApi = {
   addSite: async (userId: string, url: string, name: string) => {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
+    }
+    
     const { data, error } = await supabase
       .from('sites')
       .insert([{ user_id: userId, url, name }])
@@ -129,6 +163,10 @@ export const siteApi = {
   },
   
   getSites: async (userId: string) => {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+    
     const { data, error } = await supabase
       .from('sites')
       .select('*')
@@ -140,6 +178,10 @@ export const siteApi = {
   },
   
   getSite: async (siteId: string) => {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
+    }
+    
     const { data, error } = await supabase
       .from('sites')
       .select('*')
@@ -151,6 +193,10 @@ export const siteApi = {
   },
   
   deleteSite: async (siteId: string) => {
+    if (!isSupabaseConfigured()) {
+      throw new Error('Supabase not configured');
+    }
+    
     const { error } = await supabase
       .from('sites')
       .delete()
@@ -164,6 +210,11 @@ export const siteApi = {
 // API functions for audits
 export const auditApi = {
   runAudit: async (siteId: string, url: string) => {
+    // Always use fallback data if Supabase is not configured
+    if (!isSupabaseConfigured()) {
+      return getFallbackData('analyzeSite', { site_id: siteId, url });
+    }
+
     // Get the current user's ID
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
@@ -177,6 +228,10 @@ export const auditApi = {
   },
   
   getLatestAudit: async (siteId: string) => {
+    if (!isSupabaseConfigured()) {
+      return null;
+    }
+    
     const { data, error } = await supabase
       .from('audits')
       .select('*')
@@ -190,6 +245,10 @@ export const auditApi = {
   },
   
   getAudits: async (siteId: string) => {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+    
     const { data, error } = await supabase
       .from('audits')
       .select('*')
@@ -204,6 +263,10 @@ export const auditApi = {
 // API functions for schemas
 export const schemaApi = {
   getSchemas: async (auditId: string) => {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+    
     const { data, error } = await supabase
       .from('schemas')
       .select('*')
@@ -235,6 +298,10 @@ export const citationApi = {
   },
   
   getCitations: async (siteId: string) => {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+    
     const { data, error } = await supabase
       .from('citations')
       .select('*')
@@ -262,6 +329,10 @@ export const summaryApi = {
   },
   
   getSummaries: async (siteId: string) => {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+    
     const { data, error } = await supabase
       .from('summaries')
       .select('*')
@@ -302,6 +373,10 @@ export const entityApi = {
   },
   
   getEntities: async (siteId: string) => {
+    if (!isSupabaseConfigured()) {
+      return [];
+    }
+    
     const { data, error } = await supabase
       .from('entities')
       .select('*')
