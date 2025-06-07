@@ -525,20 +525,30 @@ Deno.serve(async (req) => {
       console.log(`🔍 Key contains 'test': ${openaiApiKey.includes('test')}`);
       console.log(`🔍 Key contains 'demo': ${openaiApiKey.includes('demo')}`);
       console.log(`🔍 Key starts with 'sk-': ${openaiApiKey.startsWith('sk-')}`);
+      
+      // NEW: More detailed format validation
+      console.log(`🔍 Key starts with 'sk-proj-': ${openaiApiKey.startsWith('sk-proj-')}`);
+      console.log(`🔍 Key starts with 'sk-svcacct-': ${openaiApiKey.startsWith('sk-svcacct-')}`);
+      console.log(`🔍 Key character breakdown:`);
+      console.log(`   - Total length: ${openaiApiKey.length}`);
+      console.log(`   - Alphanumeric chars: ${(openaiApiKey.match(/[a-zA-Z0-9]/g) || []).length}`);
+      console.log(`   - Dash chars: ${(openaiApiKey.match(/-/g) || []).length}`);
+      console.log(`   - Other chars: ${openaiApiKey.length - (openaiApiKey.match(/[a-zA-Z0-9-]/g) || []).length}`);
     } else {
       console.log("❌ No API key found in any environment variable");
       console.log("🔍 Checked variables: OPENAI_API_KEY, OPENAI_KEY, OPEN_AI_API_KEY, OPEN_AI_KEY");
     }
     
-    // SIMPLIFIED VALIDATION - Check for OpenAI key format
+    // UPDATED VALIDATION - More flexible for different OpenAI key formats
     const hasValidApiKey = openaiApiKey && 
-                          openaiApiKey.trim().length >= 20 && 
-                          openaiApiKey.startsWith('sk-') &&
+                          openaiApiKey.trim().length >= 40 && // OpenAI keys are typically 51+ chars
+                          (openaiApiKey.startsWith('sk-') || openaiApiKey.startsWith('sk-proj-') || openaiApiKey.startsWith('sk-svcacct-')) &&
                           !openaiApiKey.includes('your-') &&
                           !openaiApiKey.includes('example') &&
                           !openaiApiKey.includes('placeholder') &&
                           !openaiApiKey.includes('test-key') &&
-                          !openaiApiKey.includes('demo-key');
+                          !openaiApiKey.includes('demo-key') &&
+                          openaiApiKey === openaiApiKey.trim(); // No extra whitespace
     
     console.log(`✅ Final Validation Result: ${hasValidApiKey}`);
     
@@ -546,10 +556,10 @@ Deno.serve(async (req) => {
       console.log("❌ === API KEY VALIDATION FAILED ===");
       if (!openaiApiKey) {
         console.log("   ❌ Key is missing entirely");
-      } else if (openaiApiKey.trim().length < 20) {
-        console.log(`   ❌ Key too short (${openaiApiKey.trim().length} chars, need 20+)`);
-      } else if (!openaiApiKey.startsWith('sk-')) {
-        console.log("   ❌ Key doesn't start with 'sk-' (OpenAI format)");
+      } else if (openaiApiKey.trim().length < 40) {
+        console.log(`   ❌ Key too short (${openaiApiKey.trim().length} chars, need 40+)`);
+      } else if (!openaiApiKey.startsWith('sk-') && !openaiApiKey.startsWith('sk-proj-') && !openaiApiKey.startsWith('sk-svcacct-')) {
+        console.log("   ❌ Key doesn't start with valid OpenAI prefix (sk-, sk-proj-, sk-svcacct-)");
       } else if (openaiApiKey.includes('your-')) {
         console.log("   ❌ Key contains 'your-' (placeholder pattern)");
       } else if (openaiApiKey.includes('example')) {
@@ -560,6 +570,8 @@ Deno.serve(async (req) => {
         console.log("   ❌ Key contains 'test-key'");
       } else if (openaiApiKey.includes('demo-key')) {
         console.log("   ❌ Key contains 'demo-key'");
+      } else if (openaiApiKey !== openaiApiKey.trim()) {
+        console.log("   ❌ Key has extra whitespace");
       } else {
         console.log("   ❌ Key failed validation for unknown reason");
       }
