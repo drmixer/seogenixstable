@@ -101,6 +101,33 @@ export const auditApi = {
   }
 };
 
+// API functions for citations
+export const citationApi = {
+  trackCitations: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const result = await callEdgeFunction('trackCitations', {
+      site_id: siteId,
+      url,
+      user_id: user.id
+    });
+    
+    return result;
+  },
+
+  getCitations: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('citations')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('detected_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
 // API functions for summaries - ENHANCED
 export const summaryApi = {
   generateSummary: async (siteId: string, url: string, summaryType: string) => {
@@ -230,5 +257,39 @@ export const promptApi = {
     });
     
     return result;
+  }
+};
+
+// API functions for entities
+export const entityApi = {
+  analyzeEntityCoverage: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    // For now, return mock data since we don't have an edge function for this yet
+    return {
+      entities: [
+        {
+          id: crypto.randomUUID(),
+          site_id: siteId,
+          entity_name: 'Company Name',
+          entity_type: 'Organization',
+          mention_count: 5,
+          gap: false,
+          created_at: new Date().toISOString()
+        }
+      ]
+    };
+  },
+
+  getEntities: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('entities')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
   }
 };
