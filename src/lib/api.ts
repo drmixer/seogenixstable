@@ -159,3 +159,31 @@ export const summaryApi = {
     return data;
   }
 };
+
+// API functions for schemas
+export const schemaApi = {
+  generateSchema: async (auditId: string, url: string, schemaType: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const result = await callEdgeFunction('generateSchema', {
+      audit_id: auditId,
+      url,
+      schema_type: schemaType,
+      user_id: user.id
+    });
+    
+    return result;
+  },
+
+  getSchemas: async (auditId: string) => {
+    const { data, error } = await supabase
+      .from('schemas')
+      .select('*')
+      .eq('audit_id', auditId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
