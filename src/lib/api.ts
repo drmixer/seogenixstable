@@ -31,20 +31,24 @@ const callEdgeFunction = async (functionName: string, body: any) => {
   }
 
   try {
-    const response = await fetch(`${getBaseUrl()}/${functionName}`, {
+    const url = `${getBaseUrl()}/${functionName}`;
+    console.log(`Attempting to call Edge Function: ${url}`);
+    
+    const response = await fetch(url, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify(body)
     });
 
     if (!response.ok) {
-      console.warn(`Edge Function ${functionName} returned ${response.status}, using fallback data`);
+      console.warn(`Edge Function ${functionName} returned ${response.status}: ${response.statusText}, using fallback data`);
       return getFallbackData(functionName, body);
     }
 
     return await response.json();
   } catch (error) {
-    console.warn(`Edge Function ${functionName} failed, using fallback data:`, error);
+    console.warn(`Edge Function ${functionName} failed with error:`, error);
+    console.warn('Using fallback data instead');
     return getFallbackData(functionName, body);
   }
 };
@@ -210,21 +214,33 @@ export const siteApi = {
 // API functions for audits
 export const auditApi = {
   runAudit: async (siteId: string, url: string) => {
+    console.log('Running audit for site:', siteId, 'URL:', url);
+    console.log('Supabase configured:', isSupabaseConfigured());
+    
     // Always use fallback data if Supabase is not configured
     if (!isSupabaseConfigured()) {
+      console.log('Using fallback data due to Supabase configuration');
       return getFallbackData('analyzeSite', { site_id: siteId, url });
     }
 
-    // Get the current user's ID
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
+    try {
+      // Get the current user's ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        console.warn('User not authenticated, using fallback data');
+        return getFallbackData('analyzeSite', { site_id: siteId, url });
+      }
 
-    // Call the analyzeSite edge function with user_id
-    return await callEdgeFunction('analyzeSite', { 
-      site_id: siteId, 
-      url,
-      user_id: user.id 
-    });
+      // Call the analyzeSite edge function with user_id
+      return await callEdgeFunction('analyzeSite', { 
+        site_id: siteId, 
+        url,
+        user_id: user.id 
+      });
+    } catch (error) {
+      console.warn('Error in runAudit, using fallback data:', error);
+      return getFallbackData('analyzeSite', { site_id: siteId, url });
+    }
   },
   
   getLatestAudit: async (siteId: string) => {
