@@ -112,6 +112,19 @@ const plans: Record<PlanTier, Plan> = {
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
 
+// Helper function to check if Supabase is properly configured
+const isSupabaseConfigured = () => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  return supabaseUrl && 
+         supabaseAnonKey && 
+         supabaseUrl !== 'your-supabase-url' && 
+         supabaseAnonKey !== 'your-supabase-anon-key' &&
+         supabaseUrl !== '' &&
+         supabaseAnonKey !== '';
+};
+
 export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [currentPlan, setCurrentPlan] = useState<Plan | null>(null);
@@ -126,6 +139,19 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
     const loadSubscription = async () => {
       if (!user) {
         setCurrentPlan(null);
+        setLoading(false);
+        return;
+      }
+
+      // Check if Supabase is properly configured
+      if (!isSupabaseConfigured()) {
+        console.warn('Supabase is not properly configured. Using default plan.');
+        setCurrentPlan(plans.basic);
+        setUsage({
+          citationsUsed: 0,
+          aiContentUsed: 0,
+          lastAuditDate: null,
+        });
         setLoading(false);
         return;
       }
@@ -172,6 +198,11 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
         console.error('Error loading subscription:', error);
         // Default to basic plan on error
         setCurrentPlan(plans.basic);
+        setUsage({
+          citationsUsed: 0,
+          aiContentUsed: 0,
+          lastAuditDate: null,
+        });
       } finally {
         setLoading(false);
       }
