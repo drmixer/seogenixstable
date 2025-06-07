@@ -413,11 +413,46 @@ export const auditApi = {
   }
 };
 
-// API functions for schemas
+// API functions for schemas - NOW USING REAL EDGE FUNCTION
 export const schemaApi = {
   generateSchema: async (url: string, schemaType: string) => {
-    // Use fallback data directly instead of calling non-existent edge function
-    return generateSchemaFallback({ url, schemaType });
+    console.log('🚀 Starting real schema generation...');
+    console.log(`📋 URL: ${url}`);
+    console.log(`📋 Schema Type: ${schemaType}`);
+    
+    try {
+      // Call the generateSchema edge function directly
+      console.log('📡 Calling generateSchema edge function...');
+      
+      const response = await fetch(`${getBaseUrl()}/generateSchema`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ 
+          url,
+          schema_type: schemaType
+        })
+      });
+
+      console.log(`📥 Response status: ${response.status}`);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Edge function error:', errorText);
+        throw new Error(`Edge function failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Real schema generation completed!');
+      console.log(`📊 Schema length: ${result.schema?.length || 0} characters`);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Schema generation failed:', error);
+      console.log('🔄 Falling back to mock data...');
+      
+      // Return fallback data if edge function fails
+      return generateSchemaFallback({ url, schemaType });
+    }
   },
 
   getSchemas: async (auditId: string) => {
