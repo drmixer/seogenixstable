@@ -72,6 +72,7 @@ const callEdgeFunction = async (functionName: string, body: any) => {
 
     const result = await response.json();
     console.log(`✅ Edge function ${functionName} completed successfully`);
+    console.log(`📊 Result:`, result);
     return result;
   } catch (error) {
     console.warn(`⚠️ Edge Function ${functionName} failed:`, error);
@@ -158,7 +159,7 @@ const trackCitationsFallback = (body: any) => {
 const generateSchemaFallback = (body: any) => {
   const { url, schema_type } = body;
   
-  console.log(`🎭 Generating enhanced schema for ${url} (type: ${schema_type})`);
+  console.log(`🎭 FALLBACK: Generating enhanced schema for ${url} (type: ${schema_type})`);
   
   // Extract domain information for more realistic schemas
   const urlObj = new URL(url);
@@ -340,10 +341,12 @@ const generateSchemaFallback = (body: any) => {
 
   const selectedSchema = schemaExamples[schema_type as keyof typeof schemaExamples] || schemaExamples.FAQ;
   
-  console.log(`✅ Generated ${schema_type} schema for ${capitalizedSiteName}`);
+  console.log(`✅ FALLBACK: Generated ${schema_type} schema for ${capitalizedSiteName}`);
 
   return {
-    schema: JSON.stringify(selectedSchema, null, 2)
+    schema: JSON.stringify(selectedSchema, null, 2),
+    dataSource: "Enhanced Fallback",
+    timestamp: new Date().toISOString()
   };
 };
 
@@ -554,30 +557,13 @@ export const schemaApi = {
       // Call the generateSchema edge function directly
       console.log('📡 Calling generateSchema edge function...');
       
-      const apiUrl = `${getBaseUrl()}/generateSchema`;
-      console.log(`🔗 API URL: ${apiUrl}`);
-      
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ 
-          url,
-          schema_type: schemaType
-        })
+      const result = await callEdgeFunction('generateSchema', { 
+        url,
+        schema_type: schemaType
       });
-
-      console.log(`📥 Response status: ${response.status}`);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Edge function error:', errorText);
-        console.log('🔄 Falling back to enhanced mock data...');
-        return generateSchemaFallback({ url, schema_type: schemaType });
-      }
-
-      const result = await response.json();
-      console.log('✅ Real schema generation completed!');
-      console.log(`📊 Schema length: ${result.schema?.length || 0} characters`);
+      console.log('✅ Schema generation completed!');
+      console.log(`📊 Data source: ${result.dataSource || 'Edge Function'}`);
       
       return result;
     } catch (error) {
@@ -634,27 +620,13 @@ export const citationApi = {
       // Call the trackCitations edge function directly
       console.log('📡 Calling trackCitations edge function...');
       
-      const response = await fetch(`${getBaseUrl()}/trackCitations`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ 
-          site_id: siteId, 
-          url,
-          user_id: user.id 
-        })
+      const result = await callEdgeFunction('trackCitations', { 
+        site_id: siteId, 
+        url,
+        user_id: user.id 
       });
-
-      console.log(`📥 Response status: ${response.status}`);
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ Edge function error:', errorText);
-        console.log('🔄 Falling back to mock data...');
-        return trackCitationsFallback({ site_id: siteId, url });
-      }
-
-      const result = await response.json();
-      console.log('✅ Real citation tracking completed!');
+      console.log('✅ Citation tracking completed!');
       console.log(`📊 Found ${result.new_citations_found} new citations`);
       console.log(`🔍 Platforms checked: ${result.platforms_checked?.join(', ')}`);
       
