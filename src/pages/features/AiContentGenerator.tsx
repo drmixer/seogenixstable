@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, Copy, Check } from 'lucide-react';
+import { FileText, Copy, Check, Download, Wand2, Lightbulb } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
+import { contentApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -16,6 +17,7 @@ const AiContentGenerator = () => {
   const [generatedContent, setGeneratedContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [dataSource, setDataSource] = useState('');
 
   // If the feature isn't enabled, show the restriction component
   if (!isFeatureEnabled('aiContent')) {
@@ -31,14 +33,25 @@ const AiContentGenerator = () => {
   }
 
   const contentTypes = [
-    { value: 'blogOutline', label: 'Blog Post Outline' },
-    { value: 'faqSection', label: 'FAQ Section' },
-    { value: 'metaDescription', label: 'Meta Description' },
-    { value: 'productDescription', label: 'Product Description' },
-    { value: 'socialPost', label: 'Social Media Post' }
+    { value: 'blogOutline', label: 'Blog Post Outline', description: 'Structured outline for comprehensive blog posts' },
+    { value: 'faqSection', label: 'FAQ Section', description: 'Frequently asked questions and answers' },
+    { value: 'metaDescription', label: 'Meta Description', description: 'SEO-optimized meta descriptions' },
+    { value: 'productDescription', label: 'Product Description', description: 'Compelling product descriptions' },
+    { value: 'socialPost', label: 'Social Media Post', description: 'Engaging social media content' }
   ];
 
-  const handleGenerateContent = () => {
+  const topicSuggestions = [
+    'AI visibility optimization',
+    'Voice search SEO',
+    'Schema markup implementation',
+    'Content marketing strategy',
+    'Digital transformation',
+    'E-commerce optimization',
+    'Local business SEO',
+    'Technical SEO audit'
+  ];
+
+  const handleGenerateContent = async () => {
     if (!topic || !contentType) {
       toast.error('Please enter a topic and select a content type');
       return;
@@ -50,73 +63,20 @@ const AiContentGenerator = () => {
     }
     
     setIsGenerating(true);
+    setGeneratedContent('');
+    setDataSource('');
     
-    // Rest of the existing generation logic...
-    setTimeout(() => {
-      // Example content for demonstration
-      const contentExamples = {
-        blogOutline: `# Improving Your Website's AI Visibility: A Complete Guide
-
-## Introduction
-- Why AI visibility matters in 2025
-- The difference between traditional SEO and AI optimization
-- Overview of key AI platforms (ChatGPT, Perplexity, voice assistants)
-
-## 1. Understanding AI Content Consumption
-- How AI systems read and process web content
-- The importance of clear, structured information
-- Entity recognition and semantic understanding
-
-## 2. Key Elements of AI-Friendly Content
-- Schema.org markup implementation
-- Clear headings and semantic structure
-- Comprehensive entity coverage
-- Direct question-answer formats
-
-## 3. Optimizing for Voice Assistants
-- Natural language patterns
-- Featured snippet optimization
-- Voice search keyword research
-- Local business considerations
-
-## 4. Measuring AI Visibility Success
-- Citation tracking across AI platforms
-- Visibility scoring metrics
-- Testing voice assistant responses
-- Monitoring featured snippet inclusion
-
-## Conclusion
-- Action steps for improving AI visibility
-- Future trends in AI-focused SEO
-- Resources for further learning`,
-        
-        faqSection: `## Frequently Asked Questions About AI Visibility
-
-### What is AI visibility?
-AI visibility refers to how well your content is understood, indexed, and cited by AI systems like ChatGPT, Bing AI, and voice assistants. It determines whether your content appears in AI-generated responses.
-
-### How is AI visibility different from traditional SEO?
-While traditional SEO focuses on ranking in search engine results pages, AI visibility is about being understood and cited by AI systems in direct responses to users. It requires structured data, semantic clarity, and comprehensive entity coverage.
-
-### What are the most important factors for AI visibility?
-The key factors include implementing proper schema.org markup, creating clear semantic structure, providing comprehensive information about relevant entities, and formatting content to directly answer common questions.
-
-### How can I improve my site's chances of being cited by AI tools?
-Focus on creating authoritative, factual content with clear structure. Implement appropriate schema markup, use clear headings, create comprehensive FAQ sections, and ensure your content directly answers common questions in your niche.
-
-### Can I track when AI systems cite my content?
-Yes, with specialized tools like SEOgenix, you can monitor when your content is cited by various AI systems, including featured snippets in search engines and direct references in AI chat responses.
-
-### Does AI visibility impact traditional search rankings?
-Yes, there's growing overlap between AI visibility factors and traditional SEO signals. Implementing schema markup and creating structured content helps with both AI understanding and search engine optimization.`,
-        
-        metaDescription: `Improve your content's visibility to AI systems like ChatGPT and voice assistants. Our guide explains schema markup, entity optimization, and citation tracking strategies to ensure your website gets cited by AI tools. Learn how to measure and improve your AI visibility score today.`
-      };
-      
-      setGeneratedContent(contentExamples[contentType as keyof typeof contentExamples] || contentExamples.blogOutline);
-      setIsGenerating(false);
+    try {
+      const result = await contentApi.generateContent(topic, contentType);
+      setGeneratedContent(result.content || result);
+      setDataSource(result.dataSource || 'Generated');
       toast.success('Content generated successfully');
-    }, 2000);
+    } catch (error) {
+      console.error('Error generating content:', error);
+      toast.error('Failed to generate content');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const copyToClipboard = () => {
@@ -127,6 +87,39 @@ Yes, there's growing overlap between AI visibility factors and traditional SEO s
     setTimeout(() => {
       setIsCopied(false);
     }, 2000);
+  };
+
+  const downloadContent = () => {
+    const blob = new Blob([generatedContent], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${topic.replace(/\s+/g, '-').toLowerCase()}-${contentType}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Content downloaded');
+  };
+
+  const formatContent = (content: string) => {
+    return content.split('\n').map((line, index) => {
+      if (line.startsWith('# ')) {
+        return <h1 key={index} className="text-2xl font-bold mt-6 mb-3 text-gray-900">{line.substring(2)}</h1>;
+      } else if (line.startsWith('## ')) {
+        return <h2 key={index} className="text-xl font-bold mt-5 mb-2 text-gray-800">{line.substring(3)}</h2>;
+      } else if (line.startsWith('### ')) {
+        return <h3 key={index} className="text-lg font-bold mt-4 mb-2 text-gray-700">{line.substring(4)}</h3>;
+      } else if (line.startsWith('- ')) {
+        return <li key={index} className="ml-4 mb-1 text-gray-600">{line.substring(2)}</li>;
+      } else if (line.startsWith('**') && line.endsWith('**')) {
+        return <p key={index} className="font-bold text-gray-800 mt-3 mb-1">{line.slice(2, -2)}</p>;
+      } else if (line.trim() === '') {
+        return <br key={index} />;
+      } else {
+        return <p key={index} className="mb-2 text-gray-600 leading-relaxed">{line}</p>;
+      }
+    });
   };
 
   return (
@@ -158,6 +151,20 @@ Yes, there's growing overlap between AI visibility factors and traditional SEO s
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                   />
+                  <div className="mt-2">
+                    <p className="text-xs text-gray-500 mb-2">Quick suggestions:</p>
+                    <div className="flex flex-wrap gap-1">
+                      {topicSuggestions.slice(0, 4).map((suggestion, index) => (
+                        <button
+                          key={index}
+                          onClick={() => setTopic(suggestion)}
+                          className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 
                 <div>
@@ -178,6 +185,11 @@ Yes, there's growing overlap between AI visibility factors and traditional SEO s
                       </option>
                     ))}
                   </select>
+                  {contentType && (
+                    <p className="mt-1 text-sm text-gray-500">
+                      {contentTypes.find(t => t.value === contentType)?.description}
+                    </p>
+                  )}
                 </div>
                 
                 <div>
@@ -187,7 +199,7 @@ Yes, there's growing overlap between AI visibility factors and traditional SEO s
                     onClick={handleGenerateContent}
                     isLoading={isGenerating}
                     disabled={!canGenerateContent()}
-                    icon={<FileText size={16} />}
+                    icon={<Wand2 size={16} />}
                   >
                     Generate Content
                   </Button>
@@ -201,27 +213,34 @@ Yes, there's growing overlap between AI visibility factors and traditional SEO s
             </Card>
             
             <Card className="mt-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">AI-Optimized Content Tips</h2>
-              <ul className="space-y-2 text-gray-600">
+              <h2 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                <Lightbulb className="h-5 w-5 text-yellow-500 mr-2" />
+                AI-Optimized Content Tips
+              </h2>
+              <ul className="space-y-3 text-gray-600">
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
                   <span>Use clear, direct language that answers specific questions</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
                   <span>Include factual information with authoritative sources</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
                   <span>Structure content with semantic HTML headings</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
                   <span>Cover related entities comprehensively</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
                   <span>Create FAQ sections that match common queries</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
+                  <span>Optimize for voice search and natural language</span>
                 </li>
               </ul>
             </Card>
@@ -230,36 +249,37 @@ Yes, there's growing overlap between AI visibility factors and traditional SEO s
           <div className="lg:col-span-2">
             <Card>
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-medium text-gray-900">Generated Content</h2>
+                <div>
+                  <h2 className="text-lg font-medium text-gray-900">Generated Content</h2>
+                  {dataSource && (
+                    <p className="text-sm text-gray-500 mt-1">Source: {dataSource}</p>
+                  )}
+                </div>
                 {generatedContent && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copyToClipboard}
-                    icon={isCopied ? <Check size={16} /> : <Copy size={16} />}
-                  >
-                    {isCopied ? 'Copied!' : 'Copy'}
-                  </Button>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadContent}
+                      icon={<Download size={16} />}
+                    >
+                      Download
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyToClipboard}
+                      icon={isCopied ? <Check size={16} /> : <Copy size={16} />}
+                    >
+                      {isCopied ? 'Copied!' : 'Copy'}
+                    </Button>
+                  </div>
                 )}
               </div>
               
               {generatedContent ? (
-                <div className="bg-gray-50 p-4 rounded-md overflow-auto max-h-[600px] prose max-w-none">
-                  {generatedContent.split('\n').map((line, index) => {
-                    if (line.startsWith('# ')) {
-                      return <h1 key={index} className="text-2xl font-bold mt-4 mb-2">{line.substring(2)}</h1>;
-                    } else if (line.startsWith('## ')) {
-                      return <h2 key={index} className="text-xl font-bold mt-4 mb-2">{line.substring(3)}</h2>;
-                    } else if (line.startsWith('### ')) {
-                      return <h3 key={index} className="text-lg font-bold mt-3 mb-2">{line.substring(4)}</h3>;
-                    } else if (line.startsWith('- ')) {
-                      return <li key={index} className="ml-4">{line.substring(2)}</li>;
-                    } else if (line.trim() === '') {
-                      return <br key={index} />;
-                    } else {
-                      return <p key={index}>{line}</p>;
-                    }
-                  })}
+                <div className="bg-gray-50 p-6 rounded-md overflow-auto max-h-[600px] prose max-w-none">
+                  {formatContent(generatedContent)}
                 </div>
               ) : (
                 <div className="bg-gray-50 p-8 rounded-md text-center">
@@ -272,14 +292,29 @@ Yes, there's growing overlap between AI visibility factors and traditional SEO s
               
               {generatedContent && (
                 <div className="mt-6">
-                  <h3 className="text-md font-medium text-gray-900 mb-2">Next Steps:</h3>
-                  <ul className="list-disc list-inside space-y-2 text-gray-600">
-                    <li>Review and edit the generated content to match your brand voice</li>
-                    <li>Add specific details relevant to your business or products</li>
-                    <li>Include links to authoritative sources where appropriate</li>
-                    <li>Enhance with relevant statistics and examples</li>
-                    <li>Add schema markup to further improve AI understanding</li>
-                  </ul>
+                  <h3 className="text-md font-medium text-gray-900 mb-3">Next Steps:</h3>
+                  <div className="bg-blue-50 p-4 rounded-md">
+                    <ul className="list-disc list-inside space-y-2 text-blue-800 text-sm">
+                      <li>Review and edit the generated content to match your brand voice</li>
+                      <li>Add specific details relevant to your business or products</li>
+                      <li>Include links to authoritative sources where appropriate</li>
+                      <li>Enhance with relevant statistics and examples</li>
+                      <li>Add schema markup to further improve AI understanding</li>
+                      <li>Test the content with voice search queries</li>
+                    </ul>
+                  </div>
+                  
+                  <div className="mt-4 p-4 bg-green-50 rounded-md">
+                    <h4 className="text-sm font-medium text-green-800 mb-2">AI Optimization Checklist:</h4>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-green-700">
+                      <div>✓ Clear headings structure</div>
+                      <div>✓ Question-answer format</div>
+                      <div>✓ Natural language patterns</div>
+                      <div>✓ Entity-rich content</div>
+                      <div>✓ Factual information</div>
+                      <div>✓ Voice search friendly</div>
+                    </div>
+                  </div>
                 </div>
               )}
             </Card>

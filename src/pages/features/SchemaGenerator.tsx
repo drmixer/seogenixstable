@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Code2, Copy, Check } from 'lucide-react';
+import { Code2, Copy, Check, Download, ExternalLink } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
+import { schemaApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -15,19 +16,22 @@ const SchemaGenerator = () => {
   const [generatedSchema, setGeneratedSchema] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [dataSource, setDataSource] = useState('');
 
   // Get schema generation level based on plan
   const schemaLevel = currentPlan?.limits.features.schemaGeneration || 'basic';
 
   // Filter schema types based on plan level
   const schemaTypes = [
-    { value: 'FAQ', label: 'FAQ', minLevel: 'basic' },
-    { value: 'HowTo', label: 'How-To Guide', minLevel: 'basic' },
-    { value: 'Product', label: 'Product', minLevel: 'basic' },
-    { value: 'LocalBusiness', label: 'Local Business', minLevel: 'advanced' },
-    { value: 'Article', label: 'Article', minLevel: 'advanced' },
-    { value: 'Event', label: 'Event', minLevel: 'advanced' },
-    { value: 'Organization', label: 'Organization', minLevel: 'custom' }
+    { value: 'FAQ', label: 'FAQ Page', minLevel: 'basic', description: 'Frequently Asked Questions markup' },
+    { value: 'HowTo', label: 'How-To Guide', minLevel: 'basic', description: 'Step-by-step instructions' },
+    { value: 'Product', label: 'Product', minLevel: 'basic', description: 'Product information and offers' },
+    { value: 'LocalBusiness', label: 'Local Business', minLevel: 'advanced', description: 'Local business information' },
+    { value: 'Article', label: 'Article', minLevel: 'advanced', description: 'News articles and blog posts' },
+    { value: 'Event', label: 'Event', minLevel: 'advanced', description: 'Events and happenings' },
+    { value: 'Organization', label: 'Organization', minLevel: 'custom', description: 'Company and organization data' },
+    { value: 'WebSite', label: 'Website', minLevel: 'custom', description: 'Website-level markup' },
+    { value: 'BreadcrumbList', label: 'Breadcrumbs', minLevel: 'custom', description: 'Navigation breadcrumbs' }
   ].filter(type => {
     switch (schemaLevel) {
       case 'custom':
@@ -45,84 +49,29 @@ const SchemaGenerator = () => {
       return;
     }
     
-    setIsGenerating(true);
+    // Validate URL
+    try {
+      new URL(url.startsWith('http') ? url : `https://${url}`);
+    } catch {
+      toast.error('Please enter a valid URL');
+      return;
+    }
     
-    // Simulate API call
-    setTimeout(() => {
-      // Example schema for demonstration
-      const schemaExamples = {
-        FAQ: `{
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  "mainEntity": [
-    {
-      "@type": "Question",
-      "name": "What is SEOgenix?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "SEOgenix is an AI-focused SEO platform that helps users improve their visibility to AI systems like chatbots and voice assistants."
-      }
-    },
-    {
-      "@type": "Question",
-      "name": "How does AI visibility differ from traditional SEO?",
-      "acceptedAnswer": {
-        "@type": "Answer",
-        "text": "AI visibility focuses on optimizing content for AI understanding, structured data, and citation by AI systems, while traditional SEO primarily targets search engine rankings."
-      }
-    }
-  ]
-}`,
-        HowTo: `{
-  "@context": "https://schema.org",
-  "@type": "HowTo",
-  "name": "How to Improve Your AI Visibility",
-  "description": "A step-by-step guide to improving your website's visibility to AI systems.",
-  "step": [
-    {
-      "@type": "HowToStep",
-      "name": "Implement structured data",
-      "text": "Add appropriate schema.org markup to your content."
-    },
-    {
-      "@type": "HowToStep",
-      "name": "Create clear, informative content",
-      "text": "Write content that directly answers common questions in your niche."
-    },
-    {
-      "@type": "HowToStep",
-      "name": "Optimize entity coverage",
-      "text": "Ensure comprehensive coverage of key entities related to your topic."
-    }
-  ]
-}`,
-        Product: `{
-  "@context": "https://schema.org",
-  "@type": "Product",
-  "name": "SEOgenix AI Visibility Platform",
-  "description": "An advanced platform for optimizing content for AI systems.",
-  "brand": {
-    "@type": "Brand",
-    "name": "SEOgenix"
-  },
-  "offers": {
-    "@type": "Offer",
-    "price": "99.00",
-    "priceCurrency": "USD",
-    "availability": "https://schema.org/InStock"
-  },
-  "aggregateRating": {
-    "@type": "AggregateRating",
-    "ratingValue": "4.8",
-    "reviewCount": "89"
-  }
-}`
-      };
-      
-      setGeneratedSchema(schemaExamples[schemaType as keyof typeof schemaExamples] || schemaExamples.FAQ);
-      setIsGenerating(false);
+    setIsGenerating(true);
+    setGeneratedSchema('');
+    setDataSource('');
+    
+    try {
+      const result = await schemaApi.generateSchema(url, schemaType);
+      setGeneratedSchema(result.schema || result);
+      setDataSource(result.dataSource || 'Generated');
       toast.success('Schema generated successfully');
-    }, 2000);
+    } catch (error) {
+      console.error('Error generating schema:', error);
+      toast.error('Failed to generate schema');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const copyToClipboard = () => {
@@ -133,6 +82,23 @@ const SchemaGenerator = () => {
     setTimeout(() => {
       setIsCopied(false);
     }, 2000);
+  };
+
+  const downloadSchema = () => {
+    const blob = new Blob([generatedSchema], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${schemaType.toLowerCase()}-schema.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Schema downloaded');
+  };
+
+  const validateSchema = () => {
+    window.open('https://validator.schema.org/', '_blank');
   };
 
   return (
@@ -147,6 +113,11 @@ const SchemaGenerator = () => {
           <p className="mt-2 text-gray-600">
             Create structured data markup that helps AI systems understand your content more effectively.
           </p>
+          {schemaLevel !== 'custom' && (
+            <div className="mt-2 text-sm text-blue-600">
+              Current plan: <span className="font-medium capitalize">{schemaLevel}</span> schema generation
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -184,6 +155,11 @@ const SchemaGenerator = () => {
                       </option>
                     ))}
                   </select>
+                  {schemaType && (
+                    <p className="mt-1 text-sm text-gray-500">
+                      {schemaTypes.find(t => t.value === schemaType)?.description}
+                    </p>
+                  )}
                 </div>
                 
                 <div>
@@ -201,51 +177,86 @@ const SchemaGenerator = () => {
             </Card>
             
             <Card className="mt-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-4">Why Use Schema?</h2>
-              <ul className="space-y-2 text-gray-600">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">Schema Benefits</h2>
+              <ul className="space-y-3 text-gray-600">
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
-                  <span>Helps AI systems understand your content</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
+                  <span>Helps AI systems understand your content structure and meaning</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
-                  <span>Improves chances of appearing in rich snippets</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
+                  <span>Improves chances of appearing in rich snippets and featured results</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
-                  <span>Increases relevance for voice assistants</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
+                  <span>Increases relevance for voice assistants and AI chatbots</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
-                  <span>Enhances overall AI visibility score</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
+                  <span>Enhances overall AI visibility and citation potential</span>
                 </li>
                 <li className="flex items-start">
-                  <span className="h-5 w-5 text-green-500 mr-2">✓</span>
-                  <span>Provides clear signals about your page's purpose</span>
+                  <span className="h-5 w-5 text-green-500 mr-2 mt-0.5">✓</span>
+                  <span>Provides clear semantic signals about your page's purpose</span>
                 </li>
               </ul>
             </Card>
+
+            {schemaLevel !== 'custom' && (
+              <Card className="mt-6 bg-blue-50 border border-blue-100">
+                <h2 className="text-lg font-medium text-blue-800 mb-2">Upgrade for More</h2>
+                <p className="text-blue-700 text-sm mb-3">
+                  Get access to advanced schema types and custom templates with higher-tier plans.
+                </p>
+                <Button variant="primary" size="sm">
+                  View Plans
+                </Button>
+              </Card>
+            )}
           </div>
           
           <div className="lg:col-span-2">
             <Card>
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-medium text-gray-900">Generated Schema</h2>
+                <div>
+                  <h2 className="text-lg font-medium text-gray-900">Generated Schema</h2>
+                  {dataSource && (
+                    <p className="text-sm text-gray-500 mt-1">Source: {dataSource}</p>
+                  )}
+                </div>
                 {generatedSchema && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={copyToClipboard}
-                    icon={isCopied ? <Check size={16} /> : <Copy size={16} />}
-                  >
-                    {isCopied ? 'Copied!' : 'Copy'}
-                  </Button>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={validateSchema}
+                      icon={<ExternalLink size={16} />}
+                    >
+                      Validate
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadSchema}
+                      icon={<Download size={16} />}
+                    >
+                      Download
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={copyToClipboard}
+                      icon={isCopied ? <Check size={16} /> : <Copy size={16} />}
+                    >
+                      {isCopied ? 'Copied!' : 'Copy'}
+                    </Button>
+                  </div>
                 )}
               </div>
               
               {generatedSchema ? (
                 <div className="bg-gray-50 p-4 rounded-md overflow-auto max-h-[600px]">
-                  <pre className="text-sm font-mono">{generatedSchema}</pre>
+                  <pre className="text-sm font-mono whitespace-pre-wrap">{generatedSchema}</pre>
                 </div>
               ) : (
                 <div className="bg-gray-50 p-8 rounded-md text-center">
@@ -258,13 +269,25 @@ const SchemaGenerator = () => {
               
               {generatedSchema && (
                 <div className="mt-6">
-                  <h3 className="text-md font-medium text-gray-900 mb-2">How to Implement:</h3>
-                  <ol className="list-decimal list-inside space-y-2 text-gray-600">
-                    <li>Copy the generated schema</li>
-                    <li>Paste it into a <code className="bg-gray-100 px-1 py-0.5 rounded text-sm">&lt;script type="application/ld+json"&gt;</code> tag</li>
-                    <li>Add the script to the <code className="bg-gray-100 px-1 py-0.5 rounded text-sm">&lt;head&gt;</code> section of your HTML</li>
-                    <li>Test using <a href="https://validator.schema.org/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-500">Schema.org Validator</a></li>
-                  </ol>
+                  <h3 className="text-md font-medium text-gray-900 mb-3">Implementation Guide:</h3>
+                  <div className="bg-blue-50 p-4 rounded-md">
+                    <ol className="list-decimal list-inside space-y-2 text-gray-700 text-sm">
+                      <li>Copy the generated schema markup above</li>
+                      <li>Wrap it in a <code className="bg-white px-1 py-0.5 rounded text-xs">&lt;script type="application/ld+json"&gt;</code> tag</li>
+                      <li>Add the script to the <code className="bg-white px-1 py-0.5 rounded text-xs">&lt;head&gt;</code> section of your HTML</li>
+                      <li>Test using the <a href="https://validator.schema.org/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-500 underline">Schema.org Validator</a></li>
+                      <li>Monitor your search results for rich snippet improvements</li>
+                    </ol>
+                  </div>
+                  
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">Example Implementation:</h4>
+                    <div className="bg-gray-800 text-gray-100 p-3 rounded text-xs overflow-x-auto">
+                      <code>{`<script type="application/ld+json">
+${generatedSchema}
+</script>`}</code>
+                    </div>
+                  </div>
                 </div>
               )}
             </Card>
