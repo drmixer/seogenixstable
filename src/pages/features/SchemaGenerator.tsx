@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Code2, Copy, Check } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
-import { useSite } from '../../contexts/SiteContext';
+import { useSites } from '../../contexts/SiteContext';
 import { schemaApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
@@ -12,7 +12,7 @@ import toast from 'react-hot-toast';
 
 const SchemaGenerator = () => {
   const { currentPlan } = useSubscription();
-  const { selectedSite, sites } = useSite();
+  const { selectedSite, sites } = useSites();
   const [schemaType, setSchemaType] = useState('');
   const [generatedSchema, setGeneratedSchema] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -207,8 +207,8 @@ const SchemaGenerator = () => {
                   <h3 className="text-md font-medium text-gray-900 mb-2">How to Implement:</h3>
                   <ol className="list-decimal list-inside space-y-2 text-gray-600">
                     <li>Copy the generated schema</li>
-                    <li>Paste it into a <code className="bg-gray-100 px-1 py-0.5 rounded text-sm">&lt;script type="application/ld+json"&gt;</code> tag</li>
-                    <li>Add the script to the <code className="bg-gray-100 px-1 py-0.5 rounded text-sm">&lt;head&gt;</code> section of your HTML</li>
+                    <li>Paste it into a <code className="bg-gray-100 px-1 py-0.5 rounded text-sm"><script type="application/ld+json"></code> tag</li>
+                    <li>Add the script to the <code className="bg-gray-100 px-1 py-0.5 rounded text-sm"><head></code> section of your HTML</li>
                     <li>Test using <a href="https://validator.schema.org/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-500">Schema.org Validator</a></li>
                   </ol>
                 </div>

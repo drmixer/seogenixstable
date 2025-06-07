@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Copy, Check } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
-import { useSite } from '../../contexts/SiteContext';
+import { useSites } from '../../contexts/SiteContext';
 import { contentApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
@@ -14,7 +14,7 @@ import toast from 'react-hot-toast';
 
 const AiContentGenerator = () => {
   const { isFeatureEnabled, canGenerateContent } = useSubscription();
-  const { selectedSite, sites } = useSite();
+  const { selectedSite, sites } = useSites();
   const [topic, setTopic] = useState('');
   const [contentType, setContentType] = useState('');
   const [generatedContent, setGeneratedContent] = useState('');

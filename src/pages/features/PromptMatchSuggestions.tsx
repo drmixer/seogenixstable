@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { MessageSquare, Copy, Check } from 'lucide-react';
-import { useSite } from '../../contexts/SiteContext';
+import { useSites } from '../../contexts/SiteContext';
 import { promptApi } from '../../lib/api';
 import AppLayout from '../../components/layout/AppLayout';
 import Card from '../../components/ui/Card';
@@ -10,7 +10,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import toast from 'react-hot-toast';
 
 const PromptMatchSuggestions = () => {
-  const { selectedSite, sites } = useSite();
+  const { selectedSite, sites } = useSites();
   const [content, setContent] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
