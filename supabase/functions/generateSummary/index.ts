@@ -12,10 +12,32 @@ serve(async (req) => {
   }
 
   try {
-    const { siteId, url, summaryType } = await req.json()
+    // Parse request body with error handling
+    let requestData
+    try {
+      requestData = await req.json()
+    } catch (parseError) {
+      console.error('❌ Failed to parse request JSON:', parseError)
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
+    }
+
+    const { siteId, url, summaryType } = requestData
 
     if (!siteId || !url || !summaryType) {
-      throw new Error('Missing required parameters: siteId, url, summaryType')
+      console.error('❌ Missing required parameters:', { siteId: !!siteId, url: !!url, summaryType: !!summaryType })
+      return new Response(
+        JSON.stringify({ error: 'Missing required parameters: siteId, url, summaryType' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
     }
 
     console.log(`🚀 Generating ${summaryType} summary for ${url}`)
@@ -49,14 +71,30 @@ serve(async (req) => {
       )
     }
 
-    // Fetch website content
+    // Fetch website content with proper error handling
     let siteContent = ''
     let dataSource = 'AI Generated from URL Analysis'
     
     try {
       console.log(`📡 Fetching content from ${url}`)
+      
+      // Validate URL format
+      let validUrl
+      try {
+        validUrl = new URL(url)
+      } catch (urlError) {
+        console.error('❌ Invalid URL format:', url)
+        return new Response(
+          JSON.stringify({ error: 'Invalid URL format provided' }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          },
+        )
+      }
+
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout (reduced from 10)
       
       const response = await fetch(url, {
         headers: {
@@ -80,18 +118,27 @@ serve(async (req) => {
         console.log(`✅ Successfully fetched ${siteContent.length} characters from website`)
       } else {
         console.warn(`⚠️ Failed to fetch website content: ${response.status} ${response.statusText}`)
-        siteContent = `Website: ${url}\nDomain: ${new URL(url).hostname}`
+        siteContent = `Website: ${url}\nDomain: ${validUrl.hostname}`
         dataSource = 'AI Generated from URL Analysis'
       }
     } catch (error) {
       console.warn(`⚠️ Error fetching website: ${error.message}`)
-      siteContent = `Website: ${url}\nDomain: ${new URL(url).hostname}`
+      const validUrl = new URL(url) // We know this is valid from earlier check
+      siteContent = `Website: ${url}\nDomain: ${validUrl.hostname}`
       dataSource = 'AI Generated from URL Analysis'
     }
 
-    // Generate AI-powered summary using Gemini
+    // Generate AI-powered summary using Gemini with proper error handling
     console.log(`🤖 Calling Gemini AI for ${summaryType} summary...`)
-    const content = await generateAISummary(siteContent, url, summaryType, geminiApiKey)
+    let content
+    try {
+      content = await generateAISummary(siteContent, url, summaryType, geminiApiKey)
+    } catch (aiError) {
+      console.error('❌ AI generation failed, using fallback:', aiError.message)
+      content = generateEnhancedFallbackSummary(url, summaryType)
+      dataSource = 'Enhanced Fallback Content (AI Generation Failed)'
+    }
+
     const wordCount = content.split(/\s+/).filter(word => word.length > 0).length
 
     // Create summary object for database
@@ -102,12 +149,12 @@ serve(async (req) => {
       created_at: new Date().toISOString()
     }
 
-    console.log(`✅ Generated ${wordCount} word AI-powered summary`)
+    console.log(`✅ Generated ${wordCount} word summary`)
 
     return new Response(
       JSON.stringify({
         summary,
-        dataSource: `${dataSource} (Gemini AI)`,
+        dataSource: dataSource.includes('Fallback') ? dataSource : `${dataSource} (Gemini AI)`,
         wordCount
       }),
       {
@@ -116,12 +163,17 @@ serve(async (req) => {
       },
     )
   } catch (error) {
-    console.error('❌ Error generating summary:', error)
+    console.error('❌ Unexpected error in generateSummary function:', error)
+    
+    // Always return a proper error response
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: 'Internal server error occurred while generating summary',
+        details: error.message 
+      }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
+        status: 500,
       },
     )
   }
@@ -284,6 +336,10 @@ Write as a technical overview in 300-500 words with clear specifications.`
 
   try {
     console.log(`🔗 Making API call to Gemini...`)
+    
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout for API call
+    
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
       method: 'POST',
       headers: {
@@ -319,13 +375,16 @@ Write as a technical overview in 300-500 words with clear specifications.`
             threshold: "BLOCK_MEDIUM_AND_ABOVE"
           }
         ]
-      })
+      }),
+      signal: controller.signal
     })
+
+    clearTimeout(timeoutId)
 
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`❌ Gemini API error: ${response.status} - ${errorText}`)
-      return generateEnhancedFallbackSummary(url, summaryType)
+      throw new Error(`Gemini API returned ${response.status}: ${errorText}`)
     }
 
     const data = await response.json()
@@ -337,12 +396,11 @@ Write as a technical overview in 300-500 words with clear specifications.`
       return generatedContent
     } else {
       console.error('❌ Invalid response structure from Gemini API:', JSON.stringify(data))
-      return generateEnhancedFallbackSummary(url, summaryType)
+      throw new Error('Invalid response structure from Gemini API')
     }
   } catch (error) {
     console.error('❌ Gemini API error:', error)
-    // Enhanced fallback with more context
-    return generateEnhancedFallbackSummary(url, summaryType)
+    throw error // Re-throw to be caught by calling function
   }
 }
 
