@@ -11,15 +11,11 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("VITE_SUPABASE_ANON_KEY");
 const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY");
 
-// For development, we'll use a mock API key if not available
-const mockDeepseekKey = "sk-mock-key-for-development";
-const effectiveDeepseekKey = deepseekApiKey || mockDeepseekKey;
-
 console.log("Environment check:", {
   supabaseUrl: !!supabaseUrl,
   supabaseServiceKey: !!supabaseServiceKey,
   deepseekApiKey: !!deepseekApiKey,
-  usingMockKey: !deepseekApiKey
+  deepseekKeyLength: deepseekApiKey?.length || 0
 });
 
 // Validate required environment variables
@@ -41,7 +37,142 @@ interface RequestBody {
   user_id: string;
 }
 
-// Mock DeepSeek API response for development
+// Function to fetch and analyze website content
+async function fetchWebsiteContent(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; SEOgenix-Bot/1.0)'
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const html = await response.text();
+    
+    // Extract text content and basic structure info
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim() : '';
+    
+    const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
+    const metaDescription = metaDescMatch ? metaDescMatch[1].trim() : '';
+    
+    // Check for schema markup
+    const hasJsonLd = html.includes('application/ld+json');
+    const hasMicrodata = html.includes('itemscope') || html.includes('itemtype');
+    const hasOpenGraph = html.includes('og:');
+    
+    // Extract headings
+    const headings = html.match(/<h[1-6][^>]*>([^<]+)<\/h[1-6]>/gi) || [];
+    
+    // Basic content analysis
+    const wordCount = html.replace(/<[^>]*>/g, ' ').split(/\s+/).length;
+    
+    return `
+Website: ${url}
+Title: ${title}
+Meta Description: ${metaDescription}
+Word Count: ~${wordCount}
+Has JSON-LD Schema: ${hasJsonLd}
+Has Microdata: ${hasMicrodata}
+Has Open Graph: ${hasOpenGraph}
+Number of Headings: ${headings.length}
+Sample Headings: ${headings.slice(0, 5).map(h => h.replace(/<[^>]*>/g, '')).join(', ')}
+    `.trim();
+  } catch (error) {
+    console.error("Error fetching website:", error);
+    return `Unable to fetch content from ${url}. Error: ${error.message}`;
+  }
+}
+
+// Function to call DeepSeek API
+async function analyzeWithDeepSeek(url: string, websiteContent: string): Promise<any> {
+  if (!deepseekApiKey) {
+    throw new Error("DeepSeek API key not configured");
+  }
+
+  console.log("Calling DeepSeek API for analysis...");
+  
+  const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${deepseekApiKey}`
+    },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        {
+          role: "system",
+          content: "You are an AI visibility expert who analyzes websites for their compatibility with AI systems like ChatGPT, voice assistants, and other AI tools. You provide detailed, actionable analysis."
+        },
+        {
+          role: "user",
+          content: `Analyze this website for AI visibility optimization:
+
+${websiteContent}
+
+Please provide scores (0-100) for these 5 categories and detailed analysis:
+
+1. AI Visibility Score: How well can AI systems understand and process the content
+2. Schema Score: Quality and coverage of structured data markup  
+3. Semantic Score: Clarity of content organization and entity relationships
+4. Citation Score: Likelihood of being cited by AI systems
+5. Technical SEO Score: Basic SEO factors that affect AI crawling
+
+For each score, consider the actual content, structure, and markup present. Provide specific recommendations for improvement.
+
+Return your response in this exact JSON format:
+{
+  "ai_visibility_score": 75,
+  "schema_score": 60,
+  "semantic_score": 80,
+  "citation_score": 65,
+  "technical_seo_score": 70,
+  "analysis": "Detailed analysis with specific recommendations for each area",
+  "recommendations": [
+    "Specific actionable recommendation 1",
+    "Specific actionable recommendation 2",
+    "Specific actionable recommendation 3"
+  ]
+}`
+        }
+      ],
+      max_tokens: 2000,
+      temperature: 0.3
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("DeepSeek API error response:", errorText);
+    throw new Error(`DeepSeek API error (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  console.log("DeepSeek API response received");
+  
+  const content = data.choices[0].message.content;
+  
+  // Try to extract JSON from the response
+  const jsonMatch = content.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("No valid JSON found in DeepSeek response");
+  }
+  
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+    console.log("Successfully parsed DeepSeek analysis");
+    return parsed;
+  } catch (parseError) {
+    console.error("Failed to parse DeepSeek JSON:", parseError);
+    throw new Error("Invalid JSON format in DeepSeek response");
+  }
+}
+
+// Mock data fallback (only used when DeepSeek fails)
 const getMockAnalysis = (url: string) => {
   return {
     ai_visibility_score: Math.floor(Math.random() * 30) + 70,
@@ -49,7 +180,12 @@ const getMockAnalysis = (url: string) => {
     semantic_score: Math.floor(Math.random() * 30) + 75,
     citation_score: Math.floor(Math.random() * 30) + 60,
     technical_seo_score: Math.floor(Math.random() * 30) + 70,
-    analysis: `Mock analysis for ${url}: This website shows good potential for AI visibility with some areas for improvement in schema markup and citation optimization.`
+    analysis: `Mock analysis for ${url}: This website shows good potential for AI visibility with some areas for improvement in schema markup and citation optimization. (Note: This is mock data - DeepSeek API failed)`,
+    recommendations: [
+      "Add structured data markup using schema.org",
+      "Improve content organization with clear headings",
+      "Optimize for voice search queries"
+    ]
   };
 };
 
@@ -96,89 +232,35 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Skip usage tracking for now to avoid constraint issues
-    console.log("Skipping usage tracking for user:", user_id);
+    console.log(`Starting analysis for ${url}`);
 
     let scores;
     let analysisText = "";
+    let usingRealData = false;
 
-    // Try to call DeepSeek API if we have a real key, otherwise use mock data
-    if (deepseekApiKey && deepseekApiKey !== mockDeepseekKey) {
+    // Try to get real analysis from DeepSeek
+    if (deepseekApiKey) {
       try {
-        console.log("Calling DeepSeek API...");
+        console.log("Fetching website content...");
+        const websiteContent = await fetchWebsiteContent(url);
         
-        const deepseekResponse = await fetch(
-          "https://api.deepseek.com/v1/chat/completions",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${effectiveDeepseekKey}`
-            },
-            body: JSON.stringify({
-              model: "deepseek-reasoner",
-              messages: [
-                {
-                  role: "system",
-                  content: "You are an AI visibility expert who analyzes websites for their compatibility with AI systems like ChatGPT, voice assistants, and other AI tools."
-                },
-                {
-                  role: "user",
-                  content: `Analyze this website for AI visibility: ${url}
-
-Please provide scores (0-100) for these 5 categories:
-
-1. AI Visibility Score: How well can AI systems understand and process the content
-2. Schema Score: Quality and coverage of structured data markup  
-3. Semantic Score: Clarity of content organization and entity relationships
-4. Citation Score: Likelihood of being cited by AI systems
-5. Technical SEO Score: Basic SEO factors that affect AI crawling
-
-For each score, provide a brief explanation of what was evaluated. Return your response in this exact JSON format:
-
-{
-  "ai_visibility_score": 75,
-  "schema_score": 60,
-  "semantic_score": 80,
-  "citation_score": 65,
-  "technical_seo_score": 70,
-  "analysis": "Brief overall analysis here"
-}`
-                }
-              ],
-              max_tokens: 1500,
-              temperature: 0.3
-            })
-          }
-        );
-
-        if (!deepseekResponse.ok) {
-          const errorData = await deepseekResponse.text();
-          console.error("DeepSeek API error:", errorData);
-          throw new Error(`DeepSeek API error: ${errorData}`);
-        }
-
-        const deepseekData = await deepseekResponse.json();
-        analysisText = deepseekData.choices[0].message.content;
-
-        // Try to parse JSON from the response
-        const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          scores = JSON.parse(jsonMatch[0]);
-        } else {
-          throw new Error("No JSON found in response");
-        }
+        console.log("Analyzing with DeepSeek...");
+        scores = await analyzeWithDeepSeek(url, websiteContent);
+        analysisText = scores.analysis;
+        usingRealData = true;
         
-        console.log("DeepSeek API call successful");
+        console.log("✅ Successfully got real analysis from DeepSeek API");
       } catch (apiError) {
-        console.warn("DeepSeek API failed, using mock data:", apiError);
+        console.error("❌ DeepSeek API failed:", apiError.message);
         scores = getMockAnalysis(url);
         analysisText = scores.analysis;
+        usingRealData = false;
       }
     } else {
-      console.log("Using mock analysis (no DeepSeek API key)");
+      console.log("❌ No DeepSeek API key configured, using mock data");
       scores = getMockAnalysis(url);
       analysisText = scores.analysis;
+      usingRealData = false;
     }
 
     // Create audit with service role client
@@ -226,7 +308,10 @@ For each score, provide a brief explanation of what was evaluated. Return your r
       JSON.stringify({
         audit: auditData,
         schemas,
-        analysis: scores.analysis || analysisText
+        analysis: analysisText,
+        recommendations: scores.recommendations || [],
+        usingRealData,
+        dataSource: usingRealData ? "DeepSeek API" : "Mock Data"
       }),
       {
         status: 200,
