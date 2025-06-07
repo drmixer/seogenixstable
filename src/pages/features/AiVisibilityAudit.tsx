@@ -54,6 +54,7 @@ const AiVisibilityAudit = () => {
   const { sites } = useSites();
   const [audits, setAudits] = useState<{ [siteId: string]: Audit }>({});
   const [isRunningAudit, setIsRunningAudit] = useState<{ [siteId: string]: boolean }>({});
+  const [isRunningAllAudits, setIsRunningAllAudits] = useState(false);
   const [isLoadingAudits, setIsLoadingAudits] = useState(true);
 
   // Load latest audits for all sites
@@ -135,11 +136,40 @@ const AiVisibilityAudit = () => {
       return;
     }
 
+    setIsRunningAllAudits(true);
+    let successCount = 0;
+    let errorCount = 0;
+
     // Run audits for all sites sequentially to avoid overwhelming the API
     for (const site of sites) {
-      await runAuditForSite(site);
-      // Small delay between audits
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      try {
+        console.log(`🚀 Running audit for ${site.name}...`);
+        const result = await auditApi.runAudit(site.id, site.url);
+        
+        setAudits(prev => ({
+          ...prev,
+          [site.id]: result.audit
+        }));
+
+        successCount++;
+        console.log(`✅ Audit completed for ${site.name}`);
+        
+        // Small delay between audits
+        if (site !== sites[sites.length - 1]) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+      } catch (error) {
+        console.error(`❌ Error running audit for ${site.name}:`, error);
+        errorCount++;
+      }
+    }
+
+    setIsRunningAllAudits(false);
+
+    if (successCount > 0) {
+      toast.success(`Completed ${successCount} audit${successCount > 1 ? 's' : ''}${errorCount > 0 ? ` (${errorCount} failed)` : ''}`);
+    } else {
+      toast.error('All audits failed');
     }
   };
 
@@ -239,14 +269,15 @@ const AiVisibilityAudit = () => {
               Analyze how well your content performs with AI systems and get actionable recommendations.
             </p>
           </div>
-          {sites.length > 0 && (
+          {sites.length > 1 && (
             <Button
               variant="primary"
               onClick={runAllAudits}
-              isLoading={Object.values(isRunningAudit).some(Boolean)}
-              icon={<RefreshCw size={16} />}
+              isLoading={isRunningAllAudits}
+              disabled={Object.values(isRunningAudit).some(Boolean)}
+              icon={<RefreshCw size={16} className={isRunningAllAudits ? 'animate-spin' : ''} />}
             >
-              Run All Audits
+              {isRunningAllAudits ? 'Running All Audits...' : 'Run All Audits'}
             </Button>
           )}
         </div>
@@ -329,9 +360,10 @@ const AiVisibilityAudit = () => {
                           size="sm"
                           onClick={() => runAuditForSite(site)}
                           isLoading={isRunning}
+                          disabled={isRunningAllAudits}
                           icon={<RefreshCw size={14} className={isRunning ? 'animate-spin' : ''} />}
                         >
-                          {audit ? 'Re-audit' : 'Audit'}
+                          {isRunning ? 'Auditing...' : audit ? 'Re-audit' : 'Audit'}
                         </Button>
                       </div>
 
@@ -402,9 +434,10 @@ const AiVisibilityAudit = () => {
                             variant="primary"
                             onClick={() => runAuditForSite(site)}
                             isLoading={isRunning}
+                            disabled={isRunningAllAudits}
                             icon={<BarChart3 size={16} />}
                           >
-                            Run First Audit
+                            {isRunning ? 'Running Audit...' : 'Run First Audit'}
                           </Button>
                         </div>
                       )}
@@ -413,6 +446,28 @@ const AiVisibilityAudit = () => {
                 );
               })}
             </div>
+
+            {/* Bulk Actions Info */}
+            {sites.length > 1 && (
+              <Card className="bg-blue-50 border border-blue-100">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <AlertCircle className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="ml-3">
+                    <h3 className="text-sm font-medium text-blue-800">Bulk Audit Tips</h3>
+                    <div className="mt-2 text-sm text-blue-700">
+                      <p>
+                        You can audit sites individually using the "Audit" button on each site card, or run audits for all sites at once using the "Run All Audits" button.
+                      </p>
+                      <p className="mt-1">
+                        Individual audits are useful when you've made changes to a specific site, while bulk audits are great for getting an overall view of all your sites' AI visibility.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            )}
 
             {/* What We Analyze Section */}
             <Card className="mt-8">
