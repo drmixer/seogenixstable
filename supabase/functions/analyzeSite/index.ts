@@ -406,15 +406,35 @@ Deno.serve(async (req) => {
       websiteContent = `Basic analysis for ${url} - content fetch failed: ${fetchError.message}`;
     }
 
+    // IMPROVED API KEY VALIDATION
     // Check if DeepSeek API key is properly configured
-    const hasValidApiKey = deepseekApiKey && deepseekApiKey.length > 20 && deepseekApiKey.startsWith('sk-');
+    console.log("🔑 DeepSeek API Key Check:");
+    console.log(`   📋 Key Present: ${!!deepseekApiKey}`);
+    console.log(`   📏 Key Length: ${deepseekApiKey?.length || 0} characters`);
+    console.log(`   🔤 Key Prefix: ${deepseekApiKey?.substring(0, 10) || 'none'}...`);
+    console.log(`   🔤 Key Suffix: ...${deepseekApiKey?.substring(deepseekApiKey.length - 6) || 'none'}`);
     
-    console.log(`🔑 DeepSeek API Key Check:`, {
-      present: !!deepseekApiKey,
-      length: deepseekApiKey?.length || 0,
-      startsWithSk: deepseekApiKey?.startsWith('sk-') || false,
-      isValid: hasValidApiKey
-    });
+    // More flexible validation - DeepSeek keys might not start with 'sk-'
+    const hasValidApiKey = deepseekApiKey && 
+                          deepseekApiKey.length >= 20 && 
+                          deepseekApiKey.trim() !== '' &&
+                          !deepseekApiKey.includes('your-') &&
+                          !deepseekApiKey.includes('example');
+    
+    console.log(`   ✅ Key Valid: ${hasValidApiKey}`);
+    
+    if (!hasValidApiKey) {
+      console.log("❌ API Key Validation Failed:");
+      if (!deepseekApiKey) {
+        console.log("   - Key is missing entirely");
+      } else if (deepseekApiKey.length < 20) {
+        console.log(`   - Key too short (${deepseekApiKey.length} chars, need 20+)`);
+      } else if (deepseekApiKey.includes('your-') || deepseekApiKey.includes('example')) {
+        console.log("   - Key appears to be a placeholder");
+      } else {
+        console.log("   - Key failed other validation checks");
+      }
+    }
 
     // Try to get real analysis from DeepSeek
     if (hasValidApiKey) {
@@ -443,7 +463,6 @@ Deno.serve(async (req) => {
       }
     } else {
       console.log("❌ DeepSeek API key not properly configured");
-      console.log(`🔍 Key status: ${deepseekApiKey ? `Present but invalid format (${deepseekApiKey.length} chars, starts with: ${deepseekApiKey.substring(0, 3)})` : 'Missing entirely'}`);
       console.log("🔄 Using enhanced mock analysis based on website content...");
       
       scores = getEnhancedMockAnalysis(url, websiteContent);
