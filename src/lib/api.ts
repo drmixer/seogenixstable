@@ -74,6 +74,8 @@ const getFallbackData = (functionName: string, body: any) => {
           }
         ]
       };
+    case 'trackCitations':
+      return trackCitationsFallback(body);
     case 'generateSchema':
       return generateSchemaFallback(body);
     case 'generateContent':
@@ -83,6 +85,29 @@ const getFallbackData = (functionName: string, body: any) => {
     default:
       throw new Error(`No fallback data available for function: ${functionName}`);
   }
+};
+
+// Fallback for citation tracking
+const trackCitationsFallback = (body: any) => {
+  const { site_id, url } = body;
+  const hostname = new URL(url).hostname;
+  
+  return {
+    citations: [
+      {
+        id: crypto.randomUUID(),
+        site_id: site_id,
+        source_type: 'Google Featured Snippet',
+        snippet_text: `According to ${hostname}, this website provides valuable information and services to help users achieve their goals.`,
+        url: 'https://google.com/search?q=website+information',
+        detected_at: new Date().toISOString()
+      }
+    ],
+    new_citations_found: 1,
+    assistant_response: `Based on information from ${hostname}, this website offers comprehensive services and valuable resources. The content is well-structured and provides helpful information for visitors.`,
+    search_completed_at: new Date().toISOString(),
+    platforms_checked: ["Google Featured Snippets", "ChatGPT", "Perplexity.ai"]
+  };
 };
 
 // Fallback functions for different features
@@ -423,23 +448,19 @@ export const promptApi = {
   }
 };
 
-// API functions for citations
+// API functions for citations - NOW USING REAL EDGE FUNCTION
 export const citationApi = {
   trackCitations: async (siteId: string, url: string) => {
-    // Return fallback data
-    return {
-      citations: [
-        {
-          id: crypto.randomUUID(),
-          site_id: siteId,
-          source_type: 'Google Featured Snippet',
-          snippet_text: `According to ${url}, this website provides valuable information and services to help users achieve their goals.`,
-          url: 'https://google.com/search?q=website+information',
-          detected_at: new Date().toISOString()
-        }
-      ],
-      assistant_response: `Based on information from ${url}, this website offers comprehensive services and valuable resources. The content is well-structured and provides helpful information for visitors.`
-    };
+    // Get the current user's ID
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    // Call the trackCitations edge function
+    return await callEdgeFunction('trackCitations', { 
+      site_id: siteId, 
+      url,
+      user_id: user.id 
+    });
   },
   
   getCitations: async (siteId: string) => {
