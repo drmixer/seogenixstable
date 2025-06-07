@@ -78,6 +78,147 @@ export const siteApi = {
   }
 };
 
+// API functions for audits
+export const auditApi = {
+  createAudit: async (siteId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    return await callEdgeFunction('analyzeSite', { 
+      site_id: siteId,
+      user_id: user.id
+    });
+  },
+
+  getAudits: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('audits')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  getAudit: async (auditId: string) => {
+    const { data, error } = await supabase
+      .from('audits')
+      .select('*')
+      .eq('id', auditId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for schemas
+export const schemaApi = {
+  generateSchema: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    return await callEdgeFunction('generateSchema', { 
+      site_id: siteId,
+      url,
+      user_id: user.id
+    });
+  },
+
+  getSchemas: async (auditId: string) => {
+    const { data, error } = await supabase
+      .from('schemas')
+      .select('*')
+      .eq('audit_id', auditId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for citations
+export const citationApi = {
+  trackCitations: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    return await callEdgeFunction('trackCitations', { 
+      site_id: siteId,
+      url,
+      user_id: user.id
+    });
+  },
+
+  getCitations: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('citations')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('detected_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// API functions for content generation
+export const contentApi = {
+  generateContent: async (siteId: string, contentType: string, prompt: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    return await callEdgeFunction('generateContent', { 
+      site_id: siteId,
+      content_type: contentType,
+      prompt,
+      user_id: user.id
+    });
+  }
+};
+
+// API functions for prompt generation
+export const promptApi = {
+  generatePrompts: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    return await callEdgeFunction('generatePrompts', { 
+      site_id: siteId,
+      url,
+      user_id: user.id
+    });
+  }
+};
+
+// API functions for entities
+export const entityApi = {
+  getEntities: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('entities')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('mention_count', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  analyzeEntities: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    // This would call an edge function for entity analysis
+    // For now, return mock data structure
+    return {
+      entities: [],
+      gaps: [],
+      coverage_score: 0
+    };
+  }
+};
+
 // API functions for summaries - ENHANCED
 export const summaryApi = {
   generateSummary: async (siteId: string, url: string, summaryType: string) => {
