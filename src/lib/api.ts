@@ -407,20 +407,82 @@ Ready to get started? Let's connect! #${topic.replace(/\s+/g, '')} #Success`
 };
 
 const generatePromptsFallback = (body: any) => {
-  const { content } = body;
+  const { content, industry, target_audience, content_type } = body;
   
   // Extract key topics from content for more relevant suggestions
-  const suggestions = [
-    "What are the best practices for this topic?",
-    "How can I get started with this approach?",
-    "What are the main benefits of this strategy?",
-    "How does this compare to other methods?",
-    "What should I avoid when implementing this?",
-    "How can I measure success with this approach?",
-    "What tools or resources do I need for this?"
-  ];
-
-  return { suggestions };
+  const words = content.toLowerCase().split(/\s+/);
+  const commonWords = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by']);
+  const keyTerms = words.filter(word => word.length > 3 && !commonWords.has(word)).slice(0, 5);
+  const mainTopic = keyTerms[0] || 'this topic';
+  
+  return {
+    suggestions: {
+      voice_search: [
+        `What is ${mainTopic} and how does it work?`,
+        `How can ${mainTopic} help me?`,
+        `What are the benefits of ${mainTopic}?`,
+        `How do I get started with ${mainTopic}?`,
+        `Is ${mainTopic} right for my business?`,
+        `How much does ${mainTopic} cost?`,
+        `What should I look for when choosing ${mainTopic}?`
+      ],
+      faq_questions: [
+        `What is ${mainTopic}?`,
+        `How does ${mainTopic} work?`,
+        `What are the main benefits?`,
+        `How long does it take to see results?`,
+        `What are the costs involved?`,
+        `Can it be customized for my needs?`,
+        `What support is available?`
+      ],
+      headlines: [
+        `The Complete Guide to ${mainTopic}`,
+        `How ${mainTopic} Can Transform Your Business`,
+        `10 Essential ${mainTopic} Tips You Need to Know`,
+        `Getting Started with ${mainTopic}: A Beginner's Guide`,
+        `Why ${mainTopic} is Essential in 2025`,
+        `${mainTopic} Best Practices and Strategies`,
+        `The Future of ${mainTopic}: Trends and Predictions`
+      ],
+      featured_snippets: [
+        `${mainTopic} definition and explanation`,
+        `How to implement ${mainTopic} step by step`,
+        `${mainTopic} benefits and advantages`,
+        `${mainTopic} cost and pricing information`,
+        `Best practices for ${mainTopic}`,
+        `Common ${mainTopic} mistakes to avoid`,
+        `${mainTopic} requirements and prerequisites`
+      ],
+      long_tail: [
+        `best ${mainTopic} solution for small businesses`,
+        `how to choose the right ${mainTopic} provider`,
+        `${mainTopic} implementation guide for beginners`,
+        `affordable ${mainTopic} options`,
+        `${mainTopic} ROI and return on investment`,
+        `${mainTopic} integration with existing systems`,
+        `${mainTopic} success stories and case studies`
+      ],
+      comparisons: [
+        `${mainTopic} vs traditional methods`,
+        `in-house vs outsourced ${mainTopic}`,
+        `free vs paid ${mainTopic} options`,
+        `${mainTopic} for enterprise vs small business`,
+        `${mainTopic} alternatives and competitors`
+      ],
+      how_to: [
+        `How to implement ${mainTopic} effectively`,
+        `How to measure ${mainTopic} success`,
+        `How to optimize ${mainTopic} for better results`,
+        `How to troubleshoot ${mainTopic} issues`,
+        `How to scale ${mainTopic} for growth`
+      ],
+      analysis_summary: `Based on the content analysis focusing on "${mainTopic}", these suggestions target various search intents and user journey stages. The prompts are designed to capture voice search patterns, FAQ opportunities, and featured snippet targets while considering the ${industry || 'general'} industry context and ${target_audience || 'general audience'} needs.`,
+      data_source: "Enhanced Content Analysis"
+    },
+    dataSource: "Enhanced Fallback",
+    timestamp: new Date().toISOString(),
+    total_suggestions: 42
+  };
 };
 
 // API functions for subscription management
@@ -595,11 +657,47 @@ export const contentApi = {
   }
 };
 
-// API functions for prompt suggestions
+// API functions for prompt suggestions - ENHANCED
 export const promptApi = {
-  generatePrompts: async (content: string) => {
-    // Use fallback data directly instead of calling non-existent edge function
-    return generatePromptsFallback({ content });
+  generatePrompts: async (
+    content: string, 
+    industry?: string, 
+    targetAudience?: string, 
+    contentType?: string,
+    siteUrl?: string
+  ) => {
+    console.log('🚀 Starting enhanced prompt generation...');
+    console.log(`📋 Content length: ${content.length} characters`);
+    console.log(`🏭 Industry: ${industry || 'Not specified'}`);
+    console.log(`👥 Target Audience: ${targetAudience || 'Not specified'}`);
+    
+    try {
+      // Call the generatePrompts edge function
+      const result = await callEdgeFunction('generatePrompts', { 
+        content,
+        industry,
+        target_audience: targetAudience,
+        content_type: contentType,
+        site_url: siteUrl
+      });
+      
+      console.log('✅ Enhanced prompt generation completed!');
+      console.log(`📊 Data source: ${result.dataSource || 'Edge Function'}`);
+      console.log(`📊 Total suggestions: ${result.total_suggestions || 'Unknown'}`);
+      
+      return result;
+    } catch (error) {
+      console.error('❌ Prompt generation failed:', error);
+      console.log('🔄 Falling back to enhanced analysis...');
+      
+      // Return enhanced fallback data if edge function fails
+      return generatePromptsFallback({ 
+        content, 
+        industry, 
+        target_audience: targetAudience, 
+        content_type: contentType 
+      });
+    }
   }
 };
 
