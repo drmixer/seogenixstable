@@ -187,3 +187,19 @@ export const schemaApi = {
     return data;
   }
 };
+
+// API functions for prompts
+export const promptApi = {
+  generatePrompts: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const result = await callEdgeFunction('generatePrompts', {
+      site_id: siteId,
+      url,
+      user_id: user.id
+    });
+    
+    return result;
+  }
+};
