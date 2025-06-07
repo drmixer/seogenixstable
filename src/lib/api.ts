@@ -152,6 +152,12 @@ export const summaryApi = {
         throw new Error('No data returned from edge function');
       }
 
+      // Check if the Edge Function returned an error in the response data
+      if (data.error) {
+        console.error('❌ Edge function returned error:', data.error);
+        throw new Error(`Edge function failed: ${data.error}`);
+      }
+
       console.log('✅ Edge function response:', data);
 
       // The edge function now returns the complete summary object

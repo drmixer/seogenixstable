@@ -22,7 +22,7 @@ serve(async (req) => {
         JSON.stringify({ error: 'Invalid JSON in request body' }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
+          status: 200,
         },
       )
     }
@@ -35,7 +35,7 @@ serve(async (req) => {
         JSON.stringify({ error: 'Missing required parameters: siteId, url, summaryType' }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
+          status: 200,
         },
       )
     }
@@ -88,7 +88,7 @@ serve(async (req) => {
           JSON.stringify({ error: 'Invalid URL format provided' }),
           {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 400,
+            status: 200,
           },
         )
       }
@@ -167,7 +167,7 @@ serve(async (req) => {
   } catch (error) {
     console.error('❌ Unexpected error in generateSummary function:', error)
     
-    // Always return a proper error response
+    // Always return a 200 status with error information for graceful client handling
     return new Response(
       JSON.stringify({ 
         error: 'Internal server error occurred while generating summary',
@@ -175,7 +175,7 @@ serve(async (req) => {
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
+        status: 200,
       },
     )
   }
