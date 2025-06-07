@@ -11,7 +11,7 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("VITE_SUPABASE_
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("VITE_SUPABASE_ANON_KEY");
 const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY");
 
-console.log("Environment check:", {
+console.log("🔧 Environment check:", {
   supabaseUrl: !!supabaseUrl,
   supabaseServiceKey: !!supabaseServiceKey,
   deepseekApiKey: !!deepseekApiKey,
@@ -41,7 +41,7 @@ interface RequestBody {
 // Function to fetch and analyze website content
 async function fetchWebsiteContent(url: string): Promise<string> {
   try {
-    console.log(`Fetching content from: ${url}`);
+    console.log(`🌐 Fetching content from: ${url}`);
     
     const response = await fetch(url, {
       headers: {
@@ -61,7 +61,7 @@ async function fetchWebsiteContent(url: string): Promise<string> {
     }
     
     const html = await response.text();
-    console.log(`Fetched ${html.length} characters of HTML content`);
+    console.log(`📄 Fetched ${html.length} characters of HTML content`);
     
     // Extract text content and basic structure info
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
@@ -121,7 +121,7 @@ AI Readiness Indicators:
 - FAQ or Q&A Content: ${hasFAQ}
     `.trim();
   } catch (error) {
-    console.error("Error fetching website:", error);
+    console.error("❌ Error fetching website:", error);
     return `Unable to fetch content from ${url}. Error: ${error.message}. This may affect the accuracy of the analysis.`;
   }
 }
@@ -132,26 +132,20 @@ async function analyzeWithDeepSeek(url: string, websiteContent: string): Promise
     throw new Error("DeepSeek API key not configured");
   }
 
-  console.log("Calling DeepSeek API for analysis...");
+  console.log("🤖 Calling DeepSeek API for analysis...");
+  console.log(`📊 Content length being analyzed: ${websiteContent.length} characters`);
   
   try {
-    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${deepseekApiKey}`,
-        "User-Agent": "SEOgenix/1.0"
-      },
-      body: JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          {
-            role: "system",
-            content: "You are an expert AI visibility consultant who analyzes websites for their compatibility with AI systems like ChatGPT, Claude, Perplexity, voice assistants, and other AI tools. You provide detailed, actionable analysis with specific scores and recommendations."
-          },
-          {
-            role: "user",
-            content: `Analyze this website for AI visibility optimization:
+    const requestBody = {
+      model: "deepseek-chat",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert AI visibility consultant who analyzes websites for their compatibility with AI systems like ChatGPT, Claude, Perplexity, voice assistants, and other AI tools. You provide detailed, actionable analysis with specific scores and recommendations."
+        },
+        {
+          role: "user",
+          content: `Analyze this website for AI visibility optimization:
 
 ${websiteContent}
 
@@ -165,6 +159,9 @@ Based on the actual content and structure provided, give me precise scores (0-10
 
 Be specific about what you observed in the content. If schema markup is missing, score it low. If content is well-structured with clear headings, score semantic high.
 
+IMPORTANT: Include a unique analysis identifier in your response so I can verify this is a real API response.
+Analysis ID: ${Date.now()}-${Math.random().toString(36).substr(2, 9)}
+
 Return ONLY a valid JSON response in this exact format:
 {
   "ai_visibility_score": 75,
@@ -172,44 +169,59 @@ Return ONLY a valid JSON response in this exact format:
   "semantic_score": 80,
   "citation_score": 65,
   "technical_seo_score": 70,
+  "analysis_id": "include the analysis ID I provided above",
   "analysis": "Detailed analysis explaining each score based on what was actually found in the content",
   "recommendations": [
     "Specific actionable recommendation 1",
     "Specific actionable recommendation 2", 
     "Specific actionable recommendation 3"
-  ]
+  ],
+  "data_source": "DeepSeek API Real Analysis"
 }`
-          }
-        ],
-        max_tokens: 2000,
-        temperature: 0.1,
-        top_p: 0.9
-      }),
+        }
+      ],
+      max_tokens: 2000,
+      temperature: 0.1,
+      top_p: 0.9
+    };
+
+    console.log("📤 Sending request to DeepSeek API...");
+    
+    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${deepseekApiKey}`,
+        "User-Agent": "SEOgenix/1.0"
+      },
+      body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(30000) // 30 second timeout
     });
 
-    console.log(`DeepSeek API response status: ${response.status}`);
+    console.log(`📥 DeepSeek API response status: ${response.status}`);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("DeepSeek API error response:", errorText);
+      console.error("❌ DeepSeek API error response:", errorText);
       throw new Error(`DeepSeek API error (${response.status}): ${errorText}`);
     }
 
     const data = await response.json();
-    console.log("DeepSeek API response received successfully");
+    console.log("✅ DeepSeek API response received successfully");
+    console.log(`📊 Response usage:`, data.usage || 'No usage data');
     
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
       throw new Error("Invalid response structure from DeepSeek API");
     }
     
     const content = data.choices[0].message.content;
-    console.log("DeepSeek response content length:", content.length);
+    console.log(`📝 DeepSeek response content length: ${content.length} characters`);
+    console.log(`🔍 First 200 chars of response: ${content.substring(0, 200)}...`);
     
     // Try to extract JSON from the response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error("No JSON found in response:", content);
+      console.error("❌ No JSON found in response:", content);
       throw new Error("No valid JSON found in DeepSeek response");
     }
     
@@ -225,7 +237,7 @@ Return ONLY a valid JSON response in this exact format:
       }
       
       console.log("✅ Successfully parsed and validated DeepSeek analysis");
-      console.log("Scores:", {
+      console.log("📊 Scores received:", {
         ai_visibility: parsed.ai_visibility_score,
         schema: parsed.schema_score,
         semantic: parsed.semantic_score,
@@ -233,14 +245,19 @@ Return ONLY a valid JSON response in this exact format:
         technical: parsed.technical_seo_score
       });
       
+      // Log the analysis ID to verify it's real
+      if (parsed.analysis_id) {
+        console.log(`🆔 Analysis ID from DeepSeek: ${parsed.analysis_id}`);
+      }
+      
       return parsed;
     } catch (parseError) {
-      console.error("Failed to parse DeepSeek JSON:", parseError);
-      console.error("Raw content:", content);
+      console.error("❌ Failed to parse DeepSeek JSON:", parseError);
+      console.error("🔍 Raw content:", content);
       throw new Error(`Invalid JSON format in DeepSeek response: ${parseError.message}`);
     }
   } catch (error) {
-    console.error("DeepSeek API call failed:", error);
+    console.error("💥 DeepSeek API call failed:", error);
     throw error;
   }
 }
@@ -248,20 +265,24 @@ Return ONLY a valid JSON response in this exact format:
 // Mock data fallback (only used when DeepSeek fails)
 const getMockAnalysis = (url: string) => {
   const baseScore = Math.floor(Math.random() * 20) + 60; // 60-80 base
+  const mockId = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
   return {
     ai_visibility_score: Math.min(100, baseScore + Math.floor(Math.random() * 15)),
     schema_score: Math.min(100, baseScore - 10 + Math.floor(Math.random() * 20)),
     semantic_score: Math.min(100, baseScore + 5 + Math.floor(Math.random() * 15)),
     citation_score: Math.min(100, baseScore - 5 + Math.floor(Math.random() * 20)),
     technical_seo_score: Math.min(100, baseScore + Math.floor(Math.random() * 15)),
-    analysis: `Mock analysis for ${url}: This website shows potential for AI visibility optimization. The analysis indicates areas for improvement in schema markup implementation and content structure optimization. Note: This is fallback data because the DeepSeek API was not available or failed to respond.`,
+    analysis_id: mockId,
+    analysis: `🤖 MOCK ANALYSIS for ${url}: This website shows potential for AI visibility optimization. The analysis indicates areas for improvement in schema markup implementation and content structure optimization. ⚠️ NOTE: This is fallback data because the DeepSeek API was not available or failed to respond.`,
     recommendations: [
       "Implement comprehensive schema.org structured data markup",
       "Improve content organization with clear semantic headings (H1, H2, H3)",
       "Add FAQ sections to address common user questions",
       "Optimize content for voice search and natural language queries",
       "Ensure fast loading times and mobile responsiveness"
-    ]
+    ],
+    data_source: "Mock Data Fallback"
   };
 };
 
@@ -297,7 +318,7 @@ Deno.serve(async (req) => {
     // Validate URL
     try {
       const urlObj = new URL(url);
-      console.log(`Analyzing URL: ${urlObj.href}`);
+      console.log(`🔗 Analyzing URL: ${urlObj.href}`);
     } catch {
       return new Response(
         JSON.stringify({ error: "Invalid URL format" }),
@@ -315,6 +336,7 @@ Deno.serve(async (req) => {
     let analysisText = "";
     let usingRealData = false;
     let dataSource = "Mock Data";
+    let analysisId = "";
 
     // Try to get real analysis from DeepSeek
     if (deepseekApiKey && deepseekApiKey.length > 10) {
@@ -325,14 +347,18 @@ Deno.serve(async (req) => {
         console.log("🤖 Analyzing with DeepSeek API...");
         scores = await analyzeWithDeepSeek(url, websiteContent);
         analysisText = scores.analysis;
+        analysisId = scores.analysis_id || "No ID provided";
         usingRealData = true;
         dataSource = "DeepSeek API";
         
-        console.log("✅ Successfully got real analysis from DeepSeek API");
+        console.log("✅ Successfully got REAL analysis from DeepSeek API");
+        console.log(`🆔 Analysis ID: ${analysisId}`);
+        console.log(`📊 Data Source: ${scores.data_source || 'DeepSeek API'}`);
       } catch (apiError) {
         console.error("❌ DeepSeek API failed:", apiError.message);
         scores = getMockAnalysis(url);
         analysisText = scores.analysis + ` (DeepSeek API Error: ${apiError.message})`;
+        analysisId = scores.analysis_id;
         usingRealData = false;
         dataSource = "Mock Data (API Failed)";
       }
@@ -340,11 +366,13 @@ Deno.serve(async (req) => {
       console.log("❌ No valid DeepSeek API key configured, using mock data");
       scores = getMockAnalysis(url);
       analysisText = scores.analysis;
+      analysisId = scores.analysis_id;
       usingRealData = false;
       dataSource = "Mock Data (No API Key)";
     }
 
     console.log(`📊 Analysis complete. Using: ${dataSource}`);
+    console.log(`🆔 Final Analysis ID: ${analysisId}`);
 
     // Create audit with service role client
     const { data: auditData, error: auditError } = await supabase
@@ -399,10 +427,12 @@ Deno.serve(async (req) => {
       recommendations: scores.recommendations || [],
       usingRealData,
       dataSource,
+      analysisId,
       timestamp: new Date().toISOString()
     };
 
     console.log("🎉 Analysis complete and successful");
+    console.log(`🔍 VERIFICATION: Real Data = ${usingRealData}, Source = ${dataSource}, ID = ${analysisId}`);
 
     return new Response(
       JSON.stringify(response),
