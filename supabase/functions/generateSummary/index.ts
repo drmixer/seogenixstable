@@ -128,15 +128,17 @@ serve(async (req) => {
       dataSource = 'AI Generated from URL Analysis'
     }
 
-    // Generate AI-powered summary using Gemini with proper error handling
+    // Generate AI-powered summary using Gemini - this now always returns a string
     console.log(`🤖 Calling Gemini AI for ${summaryType} summary...`)
-    let content
-    try {
-      content = await generateAISummary(siteContent, url, summaryType, geminiApiKey)
-    } catch (aiError) {
-      console.error('❌ AI generation failed, using fallback:', aiError.message)
-      content = generateEnhancedFallbackSummary(url, summaryType)
+    const content = await generateAISummary(siteContent, url, summaryType, geminiApiKey)
+    
+    // Determine data source based on content
+    if (content.includes('*This overview provides a comprehensive understanding') || 
+        content.includes('This comprehensive') || 
+        content.includes('provides an overview of the key features')) {
       dataSource = 'Enhanced Fallback Content (AI Generation Failed)'
+    } else {
+      dataSource = dataSource.includes('Fallback') ? dataSource : `${dataSource} (Gemini AI)`
     }
 
     const wordCount = content.split(/\s+/).filter(word => word.length > 0).length
@@ -154,7 +156,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         summary,
-        dataSource: dataSource.includes('Fallback') ? dataSource : `${dataSource} (Gemini AI)`,
+        dataSource,
         wordCount
       }),
       {
@@ -384,7 +386,8 @@ Write as a technical overview in 300-500 words with clear specifications.`
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`❌ Gemini API error: ${response.status} - ${errorText}`)
-      throw new Error(`Gemini API returned ${response.status}: ${errorText}`)
+      console.log('🔄 Falling back to enhanced fallback content due to API error')
+      return generateEnhancedFallbackSummary(url, summaryType)
     }
 
     const data = await response.json()
@@ -396,11 +399,13 @@ Write as a technical overview in 300-500 words with clear specifications.`
       return generatedContent
     } else {
       console.error('❌ Invalid response structure from Gemini API:', JSON.stringify(data))
-      throw new Error('Invalid response structure from Gemini API')
+      console.log('🔄 Falling back to enhanced fallback content due to invalid response structure')
+      return generateEnhancedFallbackSummary(url, summaryType)
     }
   } catch (error) {
     console.error('❌ Gemini API error:', error)
-    throw error // Re-throw to be caught by calling function
+    console.log('🔄 Falling back to enhanced fallback content due to exception')
+    return generateEnhancedFallbackSummary(url, summaryType)
   }
 }
 
