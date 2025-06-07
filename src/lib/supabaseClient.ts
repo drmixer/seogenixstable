@@ -67,3 +67,5 @@ const createSupabaseClient = () => {
 const supabase = createSupabaseClient() || createMockClient();
 
 export default supabase;
+
+export { supabase }
