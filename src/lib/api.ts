@@ -1,3 +1,5 @@
+import supabase from './supabaseClient';
+
 // Common headers for API calls
 const getHeaders = () => ({
   'Content-Type': 'application/json',

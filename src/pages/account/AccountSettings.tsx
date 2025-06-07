@@ -10,7 +10,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import PlanCard from '../../components/subscription/PlanCard';
 import { PLAN_IDS } from '../../lib/lemonsqueezy';
-import { supabase } from '../../lib/supabaseClient';
+import supabase from '../../lib/supabaseClient';
 import toast from 'react-hot-toast';
 
 const AccountSettings = () => {

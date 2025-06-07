@@ -64,4 +64,6 @@ const createSupabaseClient = () => {
 };
 
 // Ensure supabase is always defined with a fallback
-export const supabase = createSupabaseClient() || createMockClient();
+const supabase = createSupabaseClient() || createMockClient();
+
+export default supabase;
