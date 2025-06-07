@@ -1,295 +1,193 @@
-import { supabase } from './supabaseClient';
+import supabase from './supabaseClient';
 
-// Helper function to call edge functions
-const callEdgeFunction = async (functionName: string, payload: any) => {
-  const { data, error } = await supabase.functions.invoke(functionName, {
-    body: payload
-  });
-  
-  if (error) throw error;
-  return data;
-};
+// Types
+export interface Site {
+  id: string;
+  user_id: string;
+  url: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
 
-// API functions for sites
+export interface Audit {
+  id: string;
+  site_id: string;
+  ai_visibility_score: number;
+  schema_score: number;
+  semantic_score: number;
+  citation_score: number;
+  technical_seo_score: number;
+  created_at: string;
+}
+
+export interface Citation {
+  id: string;
+  site_id: string;
+  source_type: string;
+  snippet_text: string;
+  url: string;
+  detected_at: string;
+}
+
+export interface Summary {
+  id: string;
+  site_id: string;
+  summary_type: string;
+  content: string;
+  created_at: string;
+}
+
+// Site API
 export const siteApi = {
-  getSites: async () => {
+  async getSites(): Promise<Site[]> {
     const { data, error } = await supabase
       .from('sites')
       .select('*')
       .order('created_at', { ascending: false });
-    
+
     if (error) throw error;
-    return data;
+    return data || [];
   },
 
-  getSite: async (siteId: string) => {
-    const { data, error } = await supabase
-      .from('sites')
-      .select('*')
-      .eq('id', siteId)
-      .single();
-    
-    if (error) throw error;
-    return data;
-  },
-
-  addSite: async (siteData: { name: string; url: string }) => {
+  async createSite(url: string, name: string): Promise<Site> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
 
     const { data, error } = await supabase
       .from('sites')
-      .insert({
-        name: siteData.name,
-        url: siteData.url,
-        user_id: user.id
-      })
+      .insert([{ url, name, user_id: user.id }])
       .select()
       .single();
-    
+
     if (error) throw error;
     return data;
   },
 
-  deleteSite: async (siteId: string) => {
+  async deleteSite(id: string): Promise<void> {
     const { error } = await supabase
       .from('sites')
       .delete()
-      .eq('id', siteId);
-    
+      .eq('id', id);
+
     if (error) throw error;
   }
 };
 
-// API functions for audits
-export const auditApi = {
-  runAudit: async (siteId: string, url: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const result = await callEdgeFunction('analyzeSite', {
-      site_id: siteId,
-      url,
-      user_id: user.id
-    });
-    
-    return result;
-  },
-
-  getLatestAudit: async (siteId: string) => {
-    const { data, error } = await supabase
-      .from('audits')
-      .select('*')
-      .eq('site_id', siteId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-    
-    if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows returned"
-    return data;
-  },
-
-  getAudits: async (siteId: string) => {
-    const { data, error } = await supabase
-      .from('audits')
-      .select('*')
-      .eq('site_id', siteId)
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
-  }
-};
-
-// API functions for citations
-export const citationApi = {
-  trackCitations: async (siteId: string, url: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const result = await callEdgeFunction('trackCitations', {
-      site_id: siteId,
-      url,
-      user_id: user.id
-    });
-    
-    return result;
-  },
-
-  getCitations: async (siteId: string) => {
-    const { data, error } = await supabase
-      .from('citations')
-      .select('*')
-      .eq('site_id', siteId)
-      .order('detected_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
-  }
-};
-
-// API functions for summaries - ENHANCED
+// Summary API
 export const summaryApi = {
-  generateSummary: async (siteId: string, url: string, summaryType: string) => {
-    console.log('🚀 Starting enhanced summary generation...');
-    console.log(`📋 Site ID: ${siteId}`);
-    console.log(`🌐 URL: ${url}`);
-    console.log(`📄 Summary Type: ${summaryType}`);
-    
-    try {
-      // Get the current user's ID
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      // Call the generateSummary edge function
-      const result = await callEdgeFunction('generateSummary', { 
-        site_id: siteId,
-        url,
-        summary_type: summaryType,
-        user_id: user.id
-      });
-      
-      console.log('✅ Enhanced summary generation completed!');
-      console.log(`📊 Data source: ${result.dataSource || 'Edge Function'}`);
-      console.log(`📊 Word count: ${result.wordCount || 'Unknown'}`);
-      
-      return result;
-    } catch (error) {
-      console.error('❌ Summary generation failed:', error);
-      console.log('🔄 Falling back to mock data...');
-      
-      // Return fallback data if edge function fails
-      const hostname = new URL(url).hostname;
-      return {
-        summary: {
-          id: crypto.randomUUID(),
-          site_id: siteId,
-          summary_type: summaryType,
-          content: `# ${hostname} Site Summary\n\nThis website provides professional services and valuable resources to help users achieve their goals. The site features a clean, user-friendly design and comprehensive information about available services.\n\n## Key Features\n- Professional service offerings\n- User-friendly interface\n- Comprehensive information\n- Quality content and resources\n\n## Target Audience\nThe site caters to individuals and businesses looking for professional services and expert guidance in their respective fields.`,
-          created_at: new Date().toISOString()
-        },
-        dataSource: "Fallback Data",
-        wordCount: 85,
-        timestamp: new Date().toISOString()
-      };
-    }
-  },
-  
-  getSummaries: async (siteId: string) => {
+  async getSummaries(siteId: string): Promise<Summary[]> {
     const { data, error } = await supabase
       .from('summaries')
       .select('*')
       .eq('site_id', siteId)
       .order('created_at', { ascending: false });
-    
+
     if (error) throw error;
-    return data;
-  }
-};
-
-// API functions for schemas
-export const schemaApi = {
-  generateSchema: async (auditId: string, url: string, schemaType: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const result = await callEdgeFunction('generateSchema', {
-      audit_id: auditId,
-      url,
-      schema_type: schemaType,
-      user_id: user.id
-    });
-    
-    return result;
+    return data || [];
   },
 
-  getSchemas: async (auditId: string) => {
+  async generateSummary(siteId: string, url: string, summaryType: string): Promise<{
+    summary: Summary;
+    dataSource: string;
+    wordCount: number;
+  }> {
+    try {
+      console.log('🚀 Calling generateSummary edge function with:', { siteId, url, summaryType });
+      
+      // Call the edge function
+      const { data, error } = await supabase.functions.invoke('generateSummary', {
+        body: { siteId, url, summaryType }
+      });
+
+      if (error) {
+        console.error('❌ Edge function error:', error);
+        throw new Error(`Edge function failed: ${error.message}`);
+      }
+
+      if (!data) {
+        throw new Error('No data returned from edge function');
+      }
+
+      console.log('✅ Edge function response:', data);
+
+      // Save the summary to the database
+      const { data: savedSummary, error: dbError } = await supabase
+        .from('summaries')
+        .insert([data.summary])
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error('❌ Database error:', dbError);
+        throw new Error(`Failed to save summary: ${dbError.message}`);
+      }
+
+      return {
+        summary: savedSummary,
+        dataSource: data.dataSource,
+        wordCount: data.wordCount
+      };
+
+    } catch (error) {
+      console.error('❌ Summary generation failed:', error);
+      throw new Error(`Failed to send a request to the Edge Function`);
+    }
+  }
+};
+
+// Audit API
+export const auditApi = {
+  async getAudits(siteId: string): Promise<Audit[]> {
     const { data, error } = await supabase
-      .from('schemas')
-      .select('*')
-      .eq('audit_id', auditId)
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
-  }
-};
-
-// API functions for content generation
-export const contentApi = {
-  generateContent: async (params: {
-    topic: string;
-    contentType: string;
-    industry: string;
-    targetAudience: string;
-    tone: string;
-    length: string;
-    siteUrl: string;
-  }) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const result = await callEdgeFunction('generateContent', {
-      topic: params.topic,
-      content_type: params.contentType,
-      industry: params.industry,
-      target_audience: params.targetAudience,
-      tone: params.tone,
-      length: params.length,
-      site_url: params.siteUrl,
-      user_id: user.id
-    });
-    
-    return result;
-  }
-};
-
-// API functions for prompts
-export const promptApi = {
-  generatePrompts: async (siteId: string, url: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    const result = await callEdgeFunction('generatePrompts', {
-      site_id: siteId,
-      url,
-      user_id: user.id
-    });
-    
-    return result;
-  }
-};
-
-// API functions for entities
-export const entityApi = {
-  analyzeEntityCoverage: async (siteId: string, url: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error('User not authenticated');
-
-    // For now, return mock data since we don't have an edge function for this yet
-    return {
-      entities: [
-        {
-          id: crypto.randomUUID(),
-          site_id: siteId,
-          entity_name: 'Company Name',
-          entity_type: 'Organization',
-          mention_count: 5,
-          gap: false,
-          created_at: new Date().toISOString()
-        }
-      ]
-    };
-  },
-
-  getEntities: async (siteId: string) => {
-    const { data, error } = await supabase
-      .from('entities')
+      .from('audits')
       .select('*')
       .eq('site_id', siteId)
       .order('created_at', { ascending: false });
-    
+
     if (error) throw error;
-    return data;
+    return data || [];
+  },
+
+  async createAudit(siteId: string, url: string): Promise<Audit> {
+    try {
+      const { data, error } = await supabase.functions.invoke('analyzeSite', {
+        body: { siteId, url }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error creating audit:', error);
+      throw error;
+    }
+  }
+};
+
+// Citation API
+export const citationApi = {
+  async getCitations(siteId: string): Promise<Citation[]> {
+    const { data, error } = await supabase
+      .from('citations')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('detected_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async trackCitations(siteId: string, url: string): Promise<Citation[]> {
+    try {
+      const { data, error } = await supabase.functions.invoke('trackCitations', {
+        body: { siteId, url }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error tracking citations:', error);
+      throw error;
+    }
   }
 };
