@@ -27,6 +27,35 @@ interface RequestBody {
   user_id: string;
 }
 
+// Function to validate Gemini API key
+function isValidGeminiApiKey(apiKey: string | undefined): boolean {
+  if (!apiKey) {
+    return false;
+  }
+  
+  // Check for placeholder values
+  if (apiKey.includes('your-') || apiKey.includes('YOUR_') || apiKey.includes('placeholder')) {
+    return false;
+  }
+  
+  // Check minimum length (Gemini API keys are typically 39+ characters)
+  if (apiKey.length < 35) {
+    return false;
+  }
+  
+  // Check for common invalid patterns
+  if (apiKey === 'undefined' || apiKey === 'null' || apiKey === '') {
+    return false;
+  }
+  
+  // Gemini API keys typically start with specific patterns
+  if (!apiKey.startsWith('AIza')) {
+    return false;
+  }
+  
+  return true;
+}
+
 // Function to fetch and analyze website content
 async function fetchWebsiteContent(url: string): Promise<string> {
   try {
@@ -110,8 +139,8 @@ async function generateSummaryWithGemini(
   summaryType: string,
   websiteContent: string
 ): Promise<any> {
-  if (!geminiApiKey || geminiApiKey.includes('your-') || geminiApiKey.length < 35) {
-    console.log("⚠️ Gemini API key not configured, using enhanced fallback");
+  if (!isValidGeminiApiKey(geminiApiKey)) {
+    console.log("⚠️ Gemini API key not configured or invalid, using enhanced fallback");
     return null;
   }
 
