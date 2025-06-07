@@ -110,6 +110,7 @@ async function generateSummaryWithGemini(
   summaryType: string,
   websiteContent: string
 ): Promise<any> {
+  // Check if Gemini API key is properly configured
   if (!geminiApiKey || geminiApiKey.includes('your-') || geminiApiKey.length < 35) {
     console.log("⚠️ Gemini API key not configured, using enhanced fallback");
     return null;
@@ -256,7 +257,9 @@ Format as a technical reference document.`
     );
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
+      const errorText = await response.text().catch(() => 'Unknown error');
+      console.error(`❌ Gemini API error: ${response.status} - ${errorText}`);
+      return null; // Return null instead of throwing
     }
 
     const data = await response.json();
@@ -271,12 +274,13 @@ Format as a technical reference document.`
         generated_at: new Date().toISOString()
       };
     } else {
-      throw new Error("Invalid response format from Gemini");
+      console.error("❌ Invalid response format from Gemini");
+      return null; // Return null instead of throwing
     }
     
   } catch (error) {
     console.error("❌ Error generating summary with Gemini:", error);
-    return null;
+    return null; // Always return null on error to trigger fallback
   }
 }
 
@@ -639,11 +643,18 @@ Deno.serve(async (req) => {
     let dataSource = "Enhanced Analysis";
 
     // Try to generate summary with Gemini AI first
-    const geminiResult = await generateSummaryWithGemini(url, summary_type, websiteContent);
-    if (geminiResult) {
-      result = geminiResult;
-      dataSource = "Gemini AI";
-    } else {
+    try {
+      const geminiResult = await generateSummaryWithGemini(url, summary_type, websiteContent);
+      if (geminiResult) {
+        result = geminiResult;
+        dataSource = "Gemini AI";
+      } else {
+        // Use enhanced fallback
+        result = generateEnhancedSummary(url, summary_type, websiteContent);
+        dataSource = "Enhanced Analysis";
+      }
+    } catch (error) {
+      console.warn("⚠️ Gemini generation failed, using fallback:", error);
       // Use enhanced fallback
       result = generateEnhancedSummary(url, summary_type, websiteContent);
       dataSource = "Enhanced Analysis";
