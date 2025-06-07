@@ -295,56 +295,34 @@ export const SubscriptionProvider: React.FC<{ children: ReactNode }> = ({ childr
     loadSubscription();
   }, [user]);
 
+  // 🚨 TESTING MODE: ALL FEATURES ENABLED FOR TESTING 🚨
   const isFeatureEnabled = (feature: keyof Plan['limits']['features']): boolean => {
-    if (!currentPlan) return false;
-    return currentPlan.limits.features[feature] !== false;
+    console.log(`🧪 TESTING MODE: Feature ${feature} is enabled for testing`);
+    return true; // Enable all features for testing
   };
 
   const getSiteLimit = (): number => {
-    return currentPlan?.limits.sites || 0;
+    return 10; // Allow up to 10 sites for testing
   };
 
   const getAuditFrequency = (): string => {
-    return currentPlan?.limits.auditFrequency || 'monthly';
+    return 'unlimited'; // No frequency limits for testing
   };
 
-  // DISABLED FOR TESTING: Always allow audits
+  // TESTING MODE: Always allow all actions
   const canRunAudit = (): boolean => {
-    return true; // Disabled limits for testing
-    
-    // Original logic (commented out):
-    // if (!currentPlan || !usage.lastAuditDate) return true;
-    // const now = new Date();
-    // const lastAudit = new Date(usage.lastAuditDate);
-    // const hoursSinceLastAudit = Math.floor((now.getTime() - lastAudit.getTime()) / (1000 * 60 * 60));
-    // switch (currentPlan.limits.auditFrequency) {
-    //   case 'daily':
-    //     return hoursSinceLastAudit >= 24;
-    //   case 'weekly':
-    //     return hoursSinceLastAudit >= 168; // 7 days * 24 hours
-    //   case 'monthly':
-    //     return hoursSinceLastAudit >= 720; // 30 days * 24 hours
-    //   default:
-    //     return false;
-    // }
+    console.log('🧪 TESTING MODE: Audit restrictions disabled');
+    return true;
   };
 
-  // DISABLED FOR TESTING: Always allow content generation
   const canGenerateContent = (): boolean => {
-    return true; // Disabled limits for testing
-    
-    // Original logic (commented out):
-    // if (!currentPlan) return false;
-    // return usage.aiContentUsed < currentPlan.limits.aiContentGenerations;
+    console.log('🧪 TESTING MODE: Content generation restrictions disabled');
+    return true;
   };
 
-  // DISABLED FOR TESTING: Always allow citation tracking
   const canTrackMoreCitations = (): boolean => {
-    return true; // Disabled limits for testing
-    
-    // Original logic (commented out):
-    // if (!currentPlan) return false;
-    // return usage.citationsUsed < currentPlan.limits.citationsPerMonth;
+    console.log('🧪 TESTING MODE: Citation tracking restrictions disabled');
+    return true;
   };
 
   return (
