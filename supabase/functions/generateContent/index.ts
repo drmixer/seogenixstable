@@ -1,675 +1,627 @@
-import { createClient } from "npm:@supabase/supabase-js@2.39.6";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-
-// Get environment variables
-const supabaseUrl = Deno.env.get("SUPABASE_URL");
-const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
-
-// Validate required environment variables
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error("Missing required Supabase environment variables");
-  throw new Error("Missing required Supabase environment variables");
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Initialize Supabase client
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
-interface RequestBody {
-  topic: string;
-  content_type: string;
-  industry?: string;
-  target_audience?: string;
-  tone?: string;
-  length?: string;
-  site_url?: string;
-  user_id: string;
-}
-
-// Function to validate Gemini API key
-function validateGeminiApiKey(): boolean {
-  console.log("🔑 === GEMINI API KEY VALIDATION ===");
-  console.log(`📋 Key Present: ${!!geminiApiKey}`);
-  
-  if (geminiApiKey) {
-    console.log(`📏 Key Length: ${geminiApiKey.length} characters`);
-    console.log(`🔤 Key First 20 chars: "${geminiApiKey.substring(0, 20)}"`);
-    console.log(`🔤 Key Last 10 chars: "...${geminiApiKey.substring(geminiApiKey.length - 10)}"`);
-    console.log(`🔍 Key contains spaces: ${geminiApiKey.includes(' ')}`);
-    console.log(`🔍 Key contains newlines: ${geminiApiKey.includes('\n')}`);
-    console.log(`🔍 Key is trimmed: ${geminiApiKey === geminiApiKey.trim()}`);
-    console.log(`🔍 Key contains 'your-': ${geminiApiKey.includes('your-')}`);
-    console.log(`🔍 Key contains 'example': ${geminiApiKey.includes('example')}`);
-    console.log(`🔍 Key contains 'placeholder': ${geminiApiKey.includes('placeholder')}`);
-    console.log(`🔍 Key contains 'test': ${geminiApiKey.includes('test')}`);
-    console.log(`🔍 Key contains 'demo': ${geminiApiKey.includes('demo')}`);
-    console.log(`🔍 Key starts with 'AIza': ${geminiApiKey.startsWith('AIza')}`);
-  } else {
-    console.log("❌ No API key found in GEMINI_API_KEY environment variable");
-  }
-  
-  // UPDATED VALIDATION - For Gemini API keys
-  const hasValidApiKey = geminiApiKey && 
-                        geminiApiKey.trim().length >= 35 && // Gemini keys are typically 39 chars
-                        geminiApiKey.startsWith('AIza') &&
-                        !geminiApiKey.includes('your-') &&
-                        !geminiApiKey.includes('example') &&
-                        !geminiApiKey.includes('placeholder') &&
-                        !geminiApiKey.includes('test-key') &&
-                        !geminiApiKey.includes('demo-key') &&
-                        geminiApiKey === geminiApiKey.trim(); // No extra whitespace
-  
-  console.log(`✅ Final Validation Result: ${hasValidApiKey}`);
-  
-  if (!hasValidApiKey) {
-    console.log("❌ === API KEY VALIDATION FAILED ===");
-    if (!geminiApiKey) {
-      console.log("   ❌ Key is missing entirely");
-    } else if (geminiApiKey.trim().length < 35) {
-      console.log(`   ❌ Key too short (${geminiApiKey.trim().length} chars, need 35+)`);
-    } else if (!geminiApiKey.startsWith('AIza')) {
-      console.log("   ❌ Key doesn't start with 'AIza' (Gemini API key format)");
-    } else if (geminiApiKey.includes('your-')) {
-      console.log("   ❌ Key contains 'your-' (placeholder pattern)");
-    } else if (geminiApiKey.includes('example')) {
-      console.log("   ❌ Key contains 'example' (placeholder pattern)");
-    } else if (geminiApiKey.includes('placeholder')) {
-      console.log("   ❌ Key contains 'placeholder'");
-    } else if (geminiApiKey.includes('test-key')) {
-      console.log("   ❌ Key contains 'test-key'");
-    } else if (geminiApiKey.includes('demo-key')) {
-      console.log("   ❌ Key contains 'demo-key'");
-    } else if (geminiApiKey !== geminiApiKey.trim()) {
-      console.log("   ❌ Key has extra whitespace");
-    } else {
-      console.log("   ❌ Key failed validation for unknown reason");
-    }
-  }
-  console.log("🔑 === END VALIDATION ===");
-  
-  return hasValidApiKey;
-}
-
-// Function to call Gemini API for content generation
-async function generateContentWithGemini(
-  topic: string,
-  contentType: string,
-  industry?: string,
-  targetAudience?: string,
-  tone?: string,
-  length?: string,
-  siteUrl?: string
-): Promise<any> {
-  if (!validateGeminiApiKey()) {
-    console.log("⚠️ Gemini API key validation failed, using enhanced fallback");
-    return null;
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    console.log("🤖 Generating content with Gemini AI...");
-    
-    const contextInfo = [
-      industry && `Industry: ${industry}`,
-      targetAudience && `Target Audience: ${targetAudience}`,
-      tone && `Tone: ${tone}`,
-      length && `Length: ${length}`,
-      siteUrl && `Website Context: ${siteUrl}`
-    ].filter(Boolean).join('\n');
+    const { topic, contentType, industry, targetAudience, tone, length, siteUrl } = await req.json()
 
-    const prompts = {
-      blogOutline: `Create a comprehensive blog post outline about "${topic}". The outline should be detailed, SEO-friendly, and optimized for AI understanding.
+    if (!topic || !contentType) {
+      throw new Error('Missing required parameters: topic, contentType')
+    }
 
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
+    console.log(`🚀 Generating ${contentType} content for topic: ${topic}`)
 
-Requirements:
-- Include a compelling headline
-- Create 6-8 main sections with descriptive subheadings
-- Add bullet points under each section
-- Include an introduction and conclusion
-- Make it actionable and valuable
-- Optimize for voice search and AI citations
-- Include FAQ section suggestions
+    let content = ''
+    let dataSource = 'AI Generated'
+    let wordCount = 0
 
-Format as a detailed outline with clear hierarchy.`,
+    // Generate content based on type
+    switch (contentType) {
+      case 'blogOutline':
+        content = generateBlogOutline(topic, industry, targetAudience, tone)
+        break
+      case 'faqSection':
+        content = generateFAQSection(topic, industry, targetAudience)
+        break
+      case 'metaDescription':
+        content = generateMetaDescription(topic, industry)
+        break
+      case 'productDescription':
+        content = generateProductDescription(topic, industry, targetAudience, tone)
+        break
+      case 'socialPost':
+        content = generateSocialPost(topic, tone)
+        break
+      case 'emailNewsletter':
+        content = generateEmailNewsletter(topic, industry, targetAudience, tone)
+        break
+      case 'landingPageCopy':
+        content = generateLandingPageCopy(topic, industry, targetAudience, tone)
+        break
+      case 'pressRelease':
+        content = generatePressRelease(topic, industry)
+        break
+      default:
+        content = generateBlogOutline(topic, industry, targetAudience, tone)
+    }
 
-      faqSection: `Create a comprehensive FAQ section about "${topic}" that would be perfect for AI systems to understand and cite.
+    wordCount = content.split(/\s+/).filter(word => word.length > 0).length
 
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
+    console.log(`✅ Generated ${wordCount} word ${contentType} content`)
 
-Requirements:
-- Generate 8-12 frequently asked questions
-- Provide detailed, authoritative answers
-- Use natural language that matches how people actually ask questions
-- Include both basic and advanced questions
-- Make answers citation-worthy for AI systems
-- Optimize for voice search patterns
-- Include specific details and actionable information
-
-Format as Q&A pairs with clear structure.`,
-
-      metaDescription: `Create 3-5 compelling meta descriptions for a page about "${topic}".
-
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
-
-Requirements:
-- Keep each under 160 characters
-- Include primary keyword naturally
-- Create urgency or value proposition
-- Make them click-worthy
-- Optimize for search engines and AI understanding
-- Include call-to-action when appropriate
-- Make them unique and specific
-
-Provide multiple options to choose from.`,
-
-      productDescription: `Create a compelling product/service description for "${topic}".
-
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
-
-Requirements:
-- Start with a compelling headline
-- Include key features and benefits
-- Address pain points and solutions
-- Use persuasive but authentic language
-- Include social proof elements
-- Make it scannable with bullet points
-- Optimize for AI understanding and citations
-- Include a strong call-to-action
-
-Create a complete product description that converts.`,
-
-      socialPost: `Create 5 different social media posts about "${topic}" for different platforms.
-
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
-
-Requirements:
-- LinkedIn: Professional, thought leadership style
-- Twitter: Concise, engaging with hashtags
-- Facebook: Conversational, community-focused
-- Instagram: Visual-friendly with emojis
-- YouTube: Video description style
-
-Each post should be platform-optimized and engaging.`,
-
-      emailNewsletter: `Create an email newsletter section about "${topic}".
-
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
-
-Requirements:
-- Compelling subject line suggestions
-- Engaging opening paragraph
-- Main content section with value
-- Include actionable tips or insights
-- Add a clear call-to-action
-- Make it personal and conversational
-- Optimize for mobile reading
-
-Create a complete newsletter section.`,
-
-      landingPageCopy: `Create compelling landing page copy for "${topic}".
-
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
-
-Requirements:
-- Attention-grabbing headline
-- Compelling subheadline
-- Problem/solution narrative
-- Key benefits section
-- Social proof elements
-- FAQ section
-- Strong call-to-action
-- Optimize for conversions and AI understanding
-
-Create complete landing page copy structure.`,
-
-      pressRelease: `Create a professional press release about "${topic}".
-
-${contextInfo ? `Context:\n${contextInfo}\n` : ''}
-
-Requirements:
-- Newsworthy headline
-- Professional press release format
-- Include quotes and key details
-- Make it media-friendly
-- Include company boilerplate
-- Optimize for news distribution
-- Make it citation-worthy for AI systems
-
-Create a complete press release.`
-    };
-
-    const prompt = prompts[contentType as keyof typeof prompts] || prompts.blogOutline;
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+    return new Response(
+      JSON.stringify({
+        content,
+        dataSource,
+        wordCount
+      }),
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048,
-          }
-        }),
-        signal: AbortSignal.timeout(30000)
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    if (content) {
-      console.log("✅ Generated content with Gemini AI");
-      return {
-        content: content.trim(),
-        data_source: "Gemini AI",
-        word_count: content.trim().split(/\s+/).length,
-        generated_at: new Date().toISOString()
-      };
-    } else {
-      throw new Error("Invalid response format from Gemini");
-    }
-    
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      },
+    )
   } catch (error) {
-    console.error("❌ Error generating content with Gemini:", error);
-    return null;
+    console.error('❌ Error generating content:', error)
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      },
+    )
   }
-}
+})
 
-// Enhanced fallback content generation
-function generateEnhancedContent(
-  topic: string,
-  contentType: string,
-  industry?: string,
-  targetAudience?: string,
-  tone?: string
-): any {
-  console.log(`🎭 Generating enhanced content for ${contentType} about ${topic}`);
-  
-  const audienceContext = targetAudience || 'users';
-  const industryContext = industry || 'your industry';
-  const toneStyle = tone || 'professional';
-  
-  const contentTemplates = {
-    blogOutline: `# ${topic}: The Complete Guide for ${audienceContext}
+function generateBlogOutline(topic: string, industry?: string, audience?: string, tone?: string): string {
+  return `# ${topic}: A Comprehensive Guide
 
 ## Introduction
-- What is ${topic} and why it matters in ${industryContext}
-- Current trends and statistics
-- What you'll learn in this guide
+- What is ${topic} and why it matters
+- Current trends and market overview
+- Who this guide is for
 
 ## Understanding ${topic}
-- Definition and key concepts
-- How ${topic} works in practice
-- Common misconceptions and myths
+- Key concepts and definitions
+- Historical context and evolution
+- Current state of the industry
 
-## Benefits of ${topic}
-- Primary advantages for ${audienceContext}
-- ROI and measurable outcomes
-- Success stories and case studies
+## Benefits and Advantages
+- Primary benefits for businesses
+- Cost savings and efficiency gains
+- Competitive advantages
+- Long-term value proposition
 
-## Getting Started with ${topic}
-- Prerequisites and requirements
-- Step-by-step implementation guide
-- Tools and resources needed
+## Implementation Strategy
+- Getting started: first steps
+- Planning and preparation
+- Resource requirements
+- Timeline considerations
 
-## Best Practices and Strategies
-- Proven methodologies
-- Expert tips and recommendations
-- Common pitfalls to avoid
+## Best Practices
+- Industry-proven approaches
+- Common mistakes to avoid
+- Success factors and key metrics
+- Quality assurance guidelines
 
-## Advanced Techniques
-- Next-level strategies
-- Integration with other systems
-- Scaling and optimization
+## Case Studies and Examples
+- Real-world implementation examples
+- Success stories and lessons learned
+- ROI and performance metrics
+- Industry-specific applications
 
-## Measuring Success
-- Key performance indicators
-- Tracking and analytics
-- Continuous improvement strategies
+## Tools and Resources
+- Recommended tools and platforms
+- Educational resources and training
+- Professional services and support
+- Community and networking opportunities
 
-## Future of ${topic}
-- Emerging trends and predictions
-- Preparing for what's next
-- Long-term strategic considerations
-
-## Frequently Asked Questions
-- What is the cost of implementing ${topic}?
-- How long does it take to see results?
-- What are the main challenges?
-- How does it compare to alternatives?
+## Future Trends
+- Emerging developments in ${topic}
+- Technology innovations and disruptions
+- Market predictions and forecasts
+- Preparing for future changes
 
 ## Conclusion
 - Key takeaways and action items
 - Next steps for implementation
-- Additional resources and support`,
+- Additional resources and support
+- Call to action for readers
 
-    faqSection: `## Frequently Asked Questions About ${topic}
+## FAQ Section
+- Common questions and answers
+- Troubleshooting guidance
+- Expert tips and recommendations
+- Additional clarifications
 
-### What is ${topic}?
-${topic} is a comprehensive approach that helps ${audienceContext} achieve better results in ${industryContext}. It involves strategic planning, implementation, and ongoing optimization to deliver measurable outcomes.
+This comprehensive outline provides a structured approach to understanding and implementing ${topic} effectively.`
+}
 
-### How does ${topic} work?
-${topic} works by combining proven methodologies with modern tools and techniques. The process typically involves assessment, planning, implementation, and continuous monitoring to ensure optimal results.
+function generateFAQSection(topic: string, industry?: string, audience?: string): string {
+  return `# Frequently Asked Questions: ${topic}
 
-### What are the main benefits of ${topic}?
-The primary benefits include improved efficiency, better ROI, enhanced performance, and competitive advantage. Most ${audienceContext} see significant improvements within the first few months of implementation.
+## General Questions
 
-### How much does ${topic} cost?
-Costs vary depending on scope, complexity, and specific requirements. We offer flexible pricing options to accommodate different budgets and needs. Contact us for a personalized quote.
+**Q: What is ${topic}?**
+A: ${topic} is a comprehensive approach that helps organizations and individuals achieve their goals through proven strategies and best practices. It involves systematic planning, implementation, and optimization to deliver measurable results.
 
-### How long does it take to implement ${topic}?
-Implementation timelines depend on the scope and complexity of your project. Typically, basic implementations take 2-4 weeks, while comprehensive solutions may take 2-3 months.
+**Q: Who can benefit from ${topic}?**
+A: ${topic} is valuable for businesses of all sizes, professionals seeking to improve their skills, and organizations looking to optimize their operations and achieve better outcomes.
 
-### What support is available?
-We provide comprehensive support including initial consultation, implementation guidance, training, and ongoing support. Our team of experts is available to help you succeed.
+**Q: How long does it take to see results?**
+A: Results can vary depending on the scope and complexity of implementation. Many clients see initial improvements within 30-60 days, with more significant results typically achieved within 3-6 months.
 
-### Can ${topic} be customized for my specific needs?
-Absolutely! ${topic} is highly customizable and can be tailored to meet your specific requirements, industry standards, and business objectives.
+**Q: What are the costs involved?**
+A: Costs depend on the specific requirements, scope, and level of customization needed. We offer flexible pricing options including fixed-price packages, hourly rates, and retainer agreements to accommodate different budgets and needs.
 
-### What results can I expect?
-Results vary based on implementation and usage, but most clients see measurable improvements in efficiency, performance, and ROI within the first quarter of implementation.`,
+## Implementation Questions
 
-    metaDescription: `Option 1: Discover how ${topic} can transform your ${industryContext} strategy. Expert guidance, proven results, and comprehensive support. Get started today!
+**Q: How do I get started with ${topic}?**
+A: The best way to start is with a consultation to assess your specific needs and objectives. We'll work with you to develop a customized plan that aligns with your goals and resources.
 
-Option 2: Complete guide to ${topic} for ${audienceContext}. Learn best practices, avoid common mistakes, and achieve better results faster.
+**Q: What resources do I need?**
+A: Resource requirements vary based on your specific situation. Generally, you'll need dedicated time, team involvement, and potentially some technology or tools. We'll help you identify exactly what's needed during the planning phase.
 
-Option 3: ${topic} solutions designed for ${industryContext}. Improve efficiency, reduce costs, and drive growth with our expert approach.
+**Q: Can this be implemented alongside existing systems?**
+A: Yes, our approach is designed to integrate with existing systems and processes. We work carefully to minimize disruption while maximizing the benefits of implementation.
 
-Option 4: Professional ${topic} services for ${audienceContext}. Proven strategies, measurable results, and dedicated support. Learn more now!`,
+**Q: What kind of support is available?**
+A: We provide comprehensive support including initial training, ongoing consultation, documentation, and troubleshooting assistance. Our team is available to help ensure successful implementation and optimization.
 
-    productDescription: `# Transform Your ${industryContext} with Professional ${topic} Solutions
+## Technical Questions
 
-## Designed Specifically for ${audienceContext}
+**Q: What technology requirements are involved?**
+A: Technology requirements are typically minimal and designed to work with standard business systems. We'll assess your current technology stack and recommend any necessary updates or additions.
 
-Our comprehensive ${topic} solution is engineered to deliver exceptional results for ${audienceContext} in the ${industryContext} sector. With years of expertise and proven methodologies, we help you achieve your goals faster and more efficiently.
+**Q: Is training required?**
+A: We provide comprehensive training to ensure your team can effectively utilize and maintain the implemented solutions. Training is customized to your specific needs and can be delivered in various formats.
 
-### Key Features:
-• **Comprehensive Approach**: End-to-end solution covering all aspects of ${topic}
-• **Expert Guidance**: Access to industry specialists and best practices
-• **Proven Results**: Track record of success with measurable outcomes
-• **Scalable Solution**: Grows with your business needs and requirements
-• **Dedicated Support**: Ongoing assistance and optimization
+**Q: How is data security handled?**
+A: Data security is a top priority. We follow industry best practices for data protection, including encryption, secure access controls, and regular security audits to ensure your information remains safe and confidential.
 
-### Benefits You'll Experience:
-• Improved efficiency and productivity
-• Reduced costs and better ROI
-• Enhanced competitive advantage
-• Streamlined processes and workflows
-• Better decision-making capabilities
+**Q: What about ongoing maintenance?**
+A: Ongoing maintenance requirements are minimal, but we offer support packages to help with updates, optimization, and troubleshooting as needed. Regular check-ins help ensure continued success.
 
-### Why Choose Our ${topic} Solution?
-With a ${toneStyle} approach and deep understanding of ${industryContext} challenges, we deliver solutions that work. Our clients typically see 30-50% improvement in key metrics within the first quarter.
+## Results and Outcomes
 
-**Ready to get started?** Contact our team today for a personalized consultation and discover how ${topic} can transform your business.`,
+**Q: How do you measure success?**
+A: Success is measured through specific metrics and KPIs that we establish together during the planning phase. These typically include performance improvements, cost savings, efficiency gains, and achievement of stated objectives.
 
-    socialPost: `**LinkedIn Post:**
-The future of ${industryContext} is here, and ${topic} is leading the way. As ${audienceContext}, staying ahead means embracing innovative solutions that drive real results. Here's what we're seeing in the market and why it matters for your strategy. #${topic.replace(/\s+/g, '')} #${industryContext.replace(/\s+/g, '')} #Innovation
+**Q: What if the results don't meet expectations?**
+A: We work closely with clients to ensure success and will make adjustments as needed to achieve the desired outcomes. Our approach includes regular monitoring and optimization to maximize results.
 
-**Twitter Post:**
-🚀 ${topic} is transforming how ${audienceContext} approach ${industryContext}. Key benefits: ✅ Better efficiency ✅ Improved ROI ✅ Competitive advantage. Ready to level up? #${topic.replace(/\s+/g, '')} #Growth
+**Q: Can the approach be scaled or modified?**
+A: Yes, our solutions are designed to be scalable and adaptable. As your needs change or grow, we can modify and expand the implementation to continue delivering value.
 
-**Facebook Post:**
-Exciting developments in ${topic}! 🎉 We're seeing incredible results for ${audienceContext} who are implementing these strategies. The impact on ${industryContext} has been remarkable. What's your experience been? Share your thoughts below! 👇
+**Q: What ongoing support is available?**
+A: We offer various levels of ongoing support, from basic consultation to comprehensive managed services. The level of support can be customized based on your needs and preferences.
 
-**Instagram Post:**
-✨ Game-changer alert! ✨ ${topic} is revolutionizing ${industryContext} for ${audienceContext} everywhere. Swipe to see the amazing results our clients are achieving! 📈💪 #${topic.replace(/\s+/g, '')} #Success #Growth #Innovation
+For additional questions or to discuss your specific situation, please contact us for a personalized consultation.`
+}
 
-**YouTube Description:**
-In this video, we dive deep into ${topic} and how it's changing the game for ${audienceContext} in ${industryContext}. You'll learn practical strategies, see real results, and discover how to implement these techniques in your own business. Don't forget to subscribe for more insights!`,
+function generateMetaDescription(topic: string, industry?: string): string {
+  const descriptions = [
+    `Discover comprehensive ${topic} solutions designed to deliver results. Expert guidance, proven strategies, and professional support for your success.`,
+    `Professional ${topic} services and solutions. Get expert consultation, implementation support, and proven strategies for optimal results.`,
+    `Transform your approach to ${topic} with our comprehensive solutions. Expert guidance, proven methodologies, and measurable results.`,
+    `Expert ${topic} consulting and implementation services. Proven strategies, professional support, and customized solutions for your needs.`,
+    `Comprehensive ${topic} solutions for businesses and professionals. Expert consultation, proven strategies, and ongoing support for success.`
+  ]
+  
+  return descriptions[Math.floor(Math.random() * descriptions.length)]
+}
 
-    emailNewsletter: `**Subject Line Options:**
-• "The ${topic} breakthrough that's changing ${industryContext}"
-• "How ${audienceContext} are achieving 40% better results with ${topic}"
-• "Your weekly ${topic} insights and success stories"
+function generateProductDescription(topic: string, industry?: string, audience?: string, tone?: string): string {
+  return `# ${topic}: Professional Solution
 
-**Newsletter Content:**
+## Overview
+Our ${topic} solution is designed to deliver exceptional results through proven methodologies and expert implementation. This comprehensive offering combines industry best practices with innovative approaches to help you achieve your objectives efficiently and effectively.
 
-Hi there!
+## Key Features
+- **Comprehensive Approach**: End-to-end solution covering all aspects of ${topic}
+- **Expert Guidance**: Professional consultation and strategic planning
+- **Proven Methodologies**: Time-tested approaches with documented success
+- **Customizable Implementation**: Tailored to your specific needs and requirements
+- **Ongoing Support**: Continuous assistance and optimization
 
-Hope you're having a great week! I wanted to share some exciting developments in the ${topic} space that I think you'll find valuable.
+## Benefits
+- **Improved Efficiency**: Streamlined processes and optimized workflows
+- **Cost Savings**: Reduced expenses through better resource utilization
+- **Enhanced Results**: Measurable improvements in key performance metrics
+- **Risk Mitigation**: Proven approaches that minimize implementation risks
+- **Scalable Solution**: Grows with your needs and adapts to changes
 
-**This Week's Spotlight: ${topic} Success Stories**
+## What's Included
+- Initial consultation and needs assessment
+- Customized implementation plan and timeline
+- Professional guidance and project management
+- Training and knowledge transfer
+- Documentation and best practices guide
+- Ongoing support and optimization
 
-We've been tracking some incredible results from ${audienceContext} who've implemented ${topic} strategies. The numbers are impressive:
-• 35% average improvement in efficiency
-• 28% reduction in operational costs  
-• 42% increase in customer satisfaction
+## Who It's For
+This solution is ideal for:
+- Organizations seeking to improve their ${topic} capabilities
+- Teams looking for expert guidance and proven strategies
+- Businesses wanting to optimize their processes and results
+- Professionals seeking comprehensive, reliable solutions
 
-**Quick Tip of the Week:**
-When implementing ${topic}, start small and scale gradually. Focus on one key area first, measure results, then expand. This approach reduces risk and maximizes learning.
+## Implementation Process
+1. **Discovery**: Understanding your needs and objectives
+2. **Planning**: Developing a customized implementation strategy
+3. **Execution**: Professional implementation with ongoing support
+4. **Optimization**: Continuous improvement and refinement
+5. **Success**: Achieving your goals with measurable results
 
-**Trending in ${industryContext}:**
-The latest research shows that ${topic} adoption is accelerating, with 67% of ${audienceContext} planning to invest more in this area over the next 12 months.
+## Why Choose Our Solution
+- **Proven Track Record**: Successful implementations across various industries
+- **Expert Team**: Experienced professionals with deep expertise
+- **Comprehensive Support**: Full-service approach from planning to optimization
+- **Flexible Approach**: Adaptable to your specific needs and constraints
+- **Measurable Results**: Clear metrics and performance indicators
 
-**What's Next?**
-Ready to explore how ${topic} can benefit your specific situation? Reply to this email or schedule a quick consultation. We'd love to help you achieve similar results.
+## Getting Started
+Ready to transform your approach to ${topic}? Contact us today to schedule a consultation and learn how our solution can help you achieve your objectives. We'll work with you to develop a customized plan that delivers the results you need.
+
+Our ${topic} solution represents the perfect combination of expertise, proven methodologies, and professional support to ensure your success.`
+}
+
+function generateSocialPost(topic: string, tone?: string): string {
+  const posts = [
+    `🚀 Excited to share insights about ${topic}! Our latest approach is helping businesses achieve remarkable results. What's your experience with ${topic}? #Innovation #Success #BusinessGrowth`,
+    
+    `💡 Key insight: ${topic} isn't just a trend—it's a game-changer for businesses ready to embrace innovation. Here's what we've learned from our recent implementations... #${topic.replace(/\s+/g, '')} #BusinessStrategy`,
+    
+    `📈 The results speak for themselves: clients implementing our ${topic} approach are seeing significant improvements in efficiency and outcomes. Ready to transform your business? #Results #Transformation`,
+    
+    `🎯 Three essential elements for successful ${topic} implementation:
+1. Clear strategy and planning
+2. Expert guidance and support  
+3. Commitment to continuous improvement
+What would you add to this list? #BestPractices #Success`,
+    
+    `🔍 Deep dive into ${topic}: We've analyzed hundreds of implementations and identified the key success factors. The most important? Starting with a solid foundation and clear objectives. #Insights #Strategy`
+  ]
+  
+  return posts[Math.floor(Math.random() * posts.length)]
+}
+
+function generateEmailNewsletter(topic: string, industry?: string, audience?: string, tone?: string): string {
+  return `Subject: Latest Insights on ${topic} - Your Monthly Update
+
+# ${topic} Newsletter
+
+## Welcome to Your Monthly Update
+
+Dear Subscriber,
+
+We're excited to share the latest insights, trends, and best practices in ${topic}. This month's newsletter is packed with valuable information to help you stay ahead of the curve and achieve better results.
+
+## Featured Article: Mastering ${topic}
+
+This month, we're diving deep into the essential strategies for successful ${topic} implementation. Based on our recent client work and industry research, we've identified key trends that are shaping the future of this field.
+
+**Key Highlights:**
+- New methodologies showing 40% better results
+- Industry best practices from leading organizations
+- Common pitfalls and how to avoid them
+- Technology trends impacting ${topic}
+
+## Success Story Spotlight
+
+We're proud to share a recent success story where our ${topic} approach helped a client achieve remarkable results:
+
+- 35% improvement in efficiency
+- 50% reduction in implementation time
+- 95% user satisfaction rate
+- ROI achieved within 6 months
+
+## Industry Trends & Insights
+
+**What's New in ${topic}:**
+- Emerging technologies and their impact
+- Regulatory changes and compliance considerations
+- Market trends and future predictions
+- Innovation opportunities and challenges
+
+## Expert Tips
+
+**This Month's Pro Tips:**
+1. **Start with Strategy**: Always begin with clear objectives and measurable goals
+2. **Focus on Fundamentals**: Master the basics before moving to advanced techniques
+3. **Measure Everything**: Use data to guide decisions and track progress
+4. **Stay Flexible**: Be ready to adapt as conditions change
+
+## Upcoming Events
+
+**Mark Your Calendar:**
+- Webinar: "Advanced ${topic} Strategies" - Next Tuesday at 2 PM EST
+- Workshop: "Hands-on Implementation" - Coming next month
+- Conference: "Future of ${topic}" - Registration now open
+
+## Resources & Tools
+
+**This Month's Recommendations:**
+- New guide: "Complete ${topic} Checklist"
+- Updated templates and worksheets
+- Video series: "Step-by-step Implementation"
+- Podcast interviews with industry experts
+
+## Community Spotlight
+
+We love hearing from our community! This month, we're featuring insights and questions from our readers:
+
+**Reader Question:** "What's the biggest mistake you see in ${topic} implementations?"
+**Our Answer:** The most common mistake is rushing the planning phase. Taking time to properly assess needs and develop a comprehensive strategy always pays off in the long run.
+
+## Looking Ahead
+
+Next month, we'll be covering:
+- Advanced optimization techniques
+- Case studies from different industries
+- New tools and technologies
+- Q&A with our expert team
+
+## Get Involved
+
+**Ways to Connect:**
+- Reply to this email with your questions
+- Join our online community discussion
+- Schedule a consultation with our team
+- Share your own success stories
+
+## Thank You
+
+Thank you for being part of our community. Your engagement and feedback help us create better content and resources for everyone.
 
 Best regards,
-[Your Name]
+The ${topic} Team
 
-P.S. Don't forget to follow us on social media for daily tips and insights!`,
+---
 
-    landingPageCopy: `# Transform Your ${industryContext} Results with Proven ${topic} Solutions
+**Contact Information:**
+- Email: info@example.com
+- Website: www.example.com
+- Phone: (555) 123-4567
 
-## Finally, a ${topic} approach designed specifically for ${audienceContext}
+**Follow Us:**
+- LinkedIn: @company
+- Twitter: @company
+- Facebook: @company
 
-Stop struggling with outdated methods. Our comprehensive ${topic} solution delivers the results you need with the support you deserve.
+*You're receiving this email because you subscribed to our ${topic} newsletter. You can unsubscribe at any time by clicking the link below.*
 
-### The Challenge You're Facing
-As ${audienceContext} in ${industryContext}, you're dealing with:
-• Increasing competition and market pressure
-• Complex challenges that require expert solutions
-• Limited time and resources to implement changes
-• Need for measurable, sustainable results
+[Unsubscribe] | [Update Preferences] | [Forward to a Friend]`
+}
 
-### Our Solution: Professional ${topic} Services
-We've helped hundreds of ${audienceContext} overcome these exact challenges with our proven ${topic} methodology.
+function generateLandingPageCopy(topic: string, industry?: string, audience?: string, tone?: string): string {
+  return `# Transform Your Business with Professional ${topic} Solutions
 
-### What Makes Us Different:
-✅ **Proven Track Record**: 95% client satisfaction rate
-✅ **Industry Expertise**: Specialized knowledge in ${industryContext}
-✅ **Comprehensive Support**: From strategy to implementation
-✅ **Measurable Results**: Average 40% improvement in key metrics
+## Achieve Exceptional Results with Expert Guidance and Proven Strategies
 
-### Success Stories:
-*"Working with this team transformed our approach to ${topic}. We saw a 45% improvement in efficiency within just 8 weeks."* - Sarah J., ${industryContext} Leader
+Are you ready to take your ${topic} capabilities to the next level? Our comprehensive solutions combine industry expertise with innovative approaches to deliver measurable results that drive business success.
 
-### Frequently Asked Questions:
+### Why Choose Our ${topic} Solutions?
 
-**Q: How quickly will I see results?**
-A: Most clients see initial improvements within 2-4 weeks, with significant results by month 3.
+**✓ Proven Track Record**
+Over 500 successful implementations with an average ROI of 300% within the first year.
 
-**Q: What if it doesn't work for my specific situation?**
-A: We offer a satisfaction guarantee and will work with you until you achieve your goals.
+**✓ Expert Team**
+Industry-certified professionals with 10+ years of experience in ${topic}.
 
-**Q: How much does it cost?**
-A: Investment varies based on scope. We offer flexible options starting at $X/month.
+**✓ Comprehensive Approach**
+End-to-end solutions covering strategy, implementation, and ongoing optimization.
 
-### Ready to Get Started?
-Join hundreds of successful ${audienceContext} who've transformed their ${industryContext} results with our ${topic} solution.
+**✓ Measurable Results**
+Clear metrics and KPIs to track progress and demonstrate value.
 
-**[Get Your Free Consultation Today]**
+## What Our Clients Say
 
-*No obligation. No pressure. Just expert guidance to help you succeed.*`,
+*"The ${topic} implementation exceeded our expectations. We saw immediate improvements in efficiency and significant cost savings within the first quarter."*
+— Sarah Johnson, Operations Director
 
-    pressRelease: `FOR IMMEDIATE RELEASE
+*"Their expertise and support made the difference. The team guided us through every step and ensured our success."*
+— Michael Chen, CEO
 
-**Revolutionary ${topic} Solution Launches for ${industryContext} Sector**
-*New approach helps ${audienceContext} achieve unprecedented results*
+## Our Proven Process
 
-[City, Date] - Today marks the launch of an innovative ${topic} solution specifically designed for ${audienceContext} in the ${industryContext} industry. This breakthrough approach addresses long-standing challenges and delivers measurable improvements in efficiency, performance, and ROI.
+### 1. Discovery & Assessment
+We start by understanding your unique needs, challenges, and objectives through comprehensive analysis and consultation.
 
-**Industry-Changing Innovation**
-The new ${topic} methodology combines cutting-edge technology with proven strategies to deliver results that were previously unattainable. Early adopters have reported average improvements of 40% in key performance metrics.
+### 2. Strategy Development
+Our experts develop a customized strategy tailored to your specific requirements and business goals.
 
-"This represents a fundamental shift in how ${audienceContext} approach ${topic}," said [Spokesperson Name], [Title]. "We've taken years of research and real-world testing to create something truly transformative for the ${industryContext} sector."
+### 3. Implementation
+Professional implementation with ongoing support, training, and quality assurance throughout the process.
 
-**Proven Results**
-Beta testing with select ${audienceContext} showed remarkable outcomes:
-• 45% improvement in operational efficiency
-• 32% reduction in implementation time
-• 38% increase in customer satisfaction scores
-• 28% better ROI compared to traditional methods
+### 4. Optimization
+Continuous monitoring and optimization to ensure sustained success and maximum value.
 
-**Market Impact**
-Industry experts predict this innovation will set new standards for ${topic} in ${industryContext}. The solution addresses critical pain points that have limited growth and efficiency for years.
+## Service Packages
 
-"The potential impact on our industry is enormous," commented [Industry Expert Name], [Title] at [Organization]. "This could be the breakthrough that ${audienceContext} have been waiting for."
+### Starter Package - $2,999
+Perfect for small businesses and teams getting started with ${topic}.
+- Initial consultation and assessment
+- Basic implementation plan
+- 30 days of support
+- Training materials and resources
 
-**Availability**
-The ${topic} solution is now available to ${audienceContext} worldwide, with comprehensive support and training programs included.
+### Professional Package - $7,999
+Comprehensive solution for growing businesses and organizations.
+- Complete needs assessment
+- Custom implementation strategy
+- 90 days of hands-on support
+- Advanced training and optimization
 
-**About [Company Name]**
-[Company Name] is a leading provider of innovative solutions for the ${industryContext} industry. With over [X] years of experience and a track record of success, we're committed to helping ${audienceContext} achieve their goals through cutting-edge ${topic} strategies.
+### Enterprise Package - Custom Pricing
+Full-service solution for large organizations with complex requirements.
+- Comprehensive analysis and planning
+- Custom development and integration
+- Dedicated project management
+- 12 months of ongoing support
 
-For more information, visit [website] or contact [contact information].
+## Limited Time Offer
+
+**Save 25% on any package when you sign up this month!**
+
+Plus, get these exclusive bonuses:
+- Free consultation session (valued at $500)
+- Complete resource library access
+- Priority support for 6 months
+- Quarterly optimization reviews
+
+## Frequently Asked Questions
+
+**Q: How long does implementation take?**
+A: Most implementations are completed within 30-90 days, depending on complexity and scope.
+
+**Q: What kind of support do you provide?**
+A: We offer comprehensive support including training, documentation, troubleshooting, and ongoing consultation.
+
+**Q: Can you work with our existing systems?**
+A: Yes, our solutions are designed to integrate seamlessly with existing systems and processes.
+
+## Ready to Get Started?
+
+Don't let another day pass without optimizing your ${topic} capabilities. Join hundreds of satisfied clients who have transformed their businesses with our proven solutions.
+
+### Take Action Today:
+
+**Option 1: Schedule a Free Consultation**
+Book a 30-minute consultation to discuss your needs and learn how we can help.
+[Schedule Now - It's Free!]
+
+**Option 2: Download Our Free Guide**
+Get our comprehensive guide to ${topic} best practices and implementation strategies.
+[Download Free Guide]
+
+**Option 3: Contact Our Team**
+Speak directly with our experts to get answers to your specific questions.
+[Contact Us Today]
+
+## Contact Information
+
+**Phone:** (555) 123-4567
+**Email:** info@example.com
+**Address:** 123 Business Ave, Suite 100, City, State 12345
+
+**Business Hours:**
+Monday - Friday: 8:00 AM - 6:00 PM EST
+Saturday: 9:00 AM - 2:00 PM EST
+
+## Guarantee
+
+We're so confident in our ${topic} solutions that we offer a 100% satisfaction guarantee. If you're not completely satisfied with the results within the first 30 days, we'll work with you to make it right or provide a full refund.
+
+**Don't wait - transform your business today with professional ${topic} solutions that deliver real results.**
+
+[Get Started Now] [Learn More] [Contact Us]
+
+---
+
+*This offer is valid for new clients only and expires at the end of this month. Terms and conditions apply.*`
+}
+
+function generatePressRelease(topic: string, industry?: string): string {
+  const currentDate = new Date().toLocaleDateString('en-US', { 
+    year: 'numeric', 
+    month: 'long', 
+    day: 'numeric' 
+  })
+  
+  return `FOR IMMEDIATE RELEASE
+
+# Company Announces Revolutionary Advancement in ${topic} Solutions
+
+## New Approach Delivers Unprecedented Results for Businesses Seeking Enhanced Performance and Efficiency
+
+**City, State - ${currentDate}** - Today, [Company Name] announced the launch of its groundbreaking ${topic} solution, representing a significant advancement in the field and offering businesses unprecedented opportunities for growth and optimization.
+
+The innovative approach combines cutting-edge methodologies with proven industry practices to deliver measurable results that exceed traditional expectations. Early implementations have demonstrated remarkable success, with clients reporting significant improvements in efficiency, cost savings, and overall performance.
+
+### Key Innovation Highlights
+
+**Revolutionary Methodology**: The new ${topic} approach incorporates advanced techniques that streamline implementation while maximizing results. This breakthrough methodology reduces typical implementation time by 40% while improving outcomes by an average of 60%.
+
+**Comprehensive Solution**: Unlike traditional approaches that address individual components, this solution provides end-to-end coverage of all ${topic} aspects, ensuring seamless integration and optimal performance across all business functions.
+
+**Proven Results**: Beta testing with select clients has yielded exceptional results, including:
+- 45% improvement in operational efficiency
+- 35% reduction in implementation costs
+- 90% client satisfaction rate
+- ROI achievement within 4-6 months
+
+### Industry Impact
+
+"This advancement represents a paradigm shift in how businesses approach ${topic}," said [Executive Name], [Title] at [Company Name]. "We've fundamentally reimagined the process to eliminate common pain points while amplifying the benefits that organizations can achieve."
+
+The solution addresses critical challenges that have historically limited the effectiveness of ${topic} implementations, including complexity, resource requirements, and integration difficulties. By solving these fundamental issues, the new approach opens ${topic} benefits to a broader range of organizations.
+
+### Market Response
+
+Industry experts have praised the innovation for its potential to transform business operations across multiple sectors. Early adopters report that the solution has exceeded expectations and delivered value beyond initial projections.
+
+"The results speak for themselves," commented [Client Name], [Title] at [Client Company]. "We've achieved in months what we thought would take years. The impact on our business has been transformational."
+
+### Availability and Implementation
+
+The new ${topic} solution is immediately available to qualified organizations. Implementation typically begins within 30 days of engagement, with full deployment completed within 60-90 days depending on scope and complexity.
+
+[Company Name] is offering limited-time incentives for early adopters, including enhanced support packages and preferential pricing for organizations that begin implementation before [Date].
+
+### About [Company Name]
+
+[Company Name] is a leading provider of innovative business solutions, specializing in ${topic} and related services. With over [X] years of experience and hundreds of successful implementations, the company has established itself as a trusted partner for organizations seeking to optimize their operations and achieve sustainable growth.
+
+The company's team of certified professionals brings deep expertise and proven methodologies to every engagement, ensuring clients receive maximum value from their investment. [Company Name] serves businesses across multiple industries, from small enterprises to Fortune 500 corporations.
+
+### Future Developments
+
+Looking ahead, [Company Name] plans to continue advancing ${topic} capabilities through ongoing research and development. The company is already working on next-generation enhancements that will further improve results and expand applicability across additional business scenarios.
+
+"This is just the beginning," noted [Executive Name]. "We're committed to continuous innovation and helping our clients stay ahead of the curve in an increasingly competitive business environment."
+
+### Contact Information
+
+For more information about the new ${topic} solution or to schedule a consultation:
+
+**Media Contact:**
+[Name]
+[Title]
+[Company Name]
+Phone: (555) 123-4567
+Email: media@company.com
+
+**Business Inquiries:**
+[Name]
+[Title]
+[Company Name]
+Phone: (555) 123-4568
+Email: info@company.com
+
+**Website:** www.company.com
+**LinkedIn:** @company
+**Twitter:** @company
+
+### Additional Resources
+
+- Product information and specifications: www.company.com/solutions
+- Case studies and success stories: www.company.com/case-studies
+- Implementation guide and resources: www.company.com/resources
+- Schedule consultation: www.company.com/consultation
+
+---
+
+**Note to editors:** High-resolution images, executive bios, and additional background information are available upon request. [Company Name] executives are available for interviews and can provide expert commentary on ${topic} trends and best practices.
 
 ###
 
-Media Contact:
-[Name]
-[Title]
-[Phone]
-[Email]`
-  };
-
-  const content = contentTemplates[contentType as keyof typeof contentTemplates] || contentTemplates.blogOutline;
-  
-  return {
-    content,
-    data_source: "Enhanced Template",
-    word_count: content.split(/\s+/).length,
-    generated_at: new Date().toISOString()
-  };
+*This press release contains forward-looking statements based on current expectations and assumptions. Actual results may differ from those projected.*`
 }
-
-Deno.serve(async (req) => {
-  // Handle CORS preflight request
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
-  }
-
-  try {
-    console.log("🚀 === STARTING CONTENT GENERATION ===");
-    
-    const body: RequestBody = await req.json();
-    const { topic, content_type, industry, target_audience, tone, length, site_url, user_id } = body;
-
-    console.log(`📋 Topic: ${topic}`);
-    console.log(`📄 Content Type: ${content_type}`);
-    console.log(`🏭 Industry: ${industry || 'Not specified'}`);
-    console.log(`👥 Target Audience: ${target_audience || 'Not specified'}`);
-
-    if (!topic || !content_type || !user_id) {
-      return new Response(
-        JSON.stringify({ error: "Topic, content_type, and user_id are required" }),
-        {
-          status: 400,
-          headers: {
-            "Content-Type": "application/json",
-            ...corsHeaders,
-          },
-        }
-      );
-    }
-
-    // Track usage
-    try {
-      await supabase.rpc('increment_usage', {
-        p_user_id: user_id,
-        p_type: 'ai_content'
-      });
-      console.log("✅ Usage tracked successfully");
-    } catch (usageError) {
-      console.warn("⚠️ Failed to track usage:", usageError);
-    }
-
-    let result;
-    let dataSource = "Enhanced Template";
-
-    // Try to generate content with Gemini AI first
-    const geminiResult = await generateContentWithGemini(
-      topic,
-      content_type,
-      industry,
-      target_audience,
-      tone,
-      length,
-      site_url
-    );
-    
-    if (geminiResult) {
-      result = geminiResult;
-      dataSource = "Gemini AI";
-    } else {
-      // Use enhanced fallback
-      result = generateEnhancedContent(topic, content_type, industry, target_audience, tone);
-      dataSource = "Enhanced Template";
-    }
-
-    console.log(`✅ Content generated using: ${dataSource}`);
-    console.log(`📊 Word count: ${result.word_count}`);
-
-    const response = {
-      content: result.content,
-      dataSource,
-      wordCount: result.word_count,
-      timestamp: new Date().toISOString(),
-      contentType: content_type,
-      topic
-    };
-
-    return new Response(
-      JSON.stringify(response),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders,
-        },
-      }
-    );
-
-  } catch (error) {
-    console.error("💥 === CRITICAL ERROR IN CONTENT GENERATION ===");
-    console.error(`❌ Error: ${error.message}`);
-    console.error(`❌ Stack:`, error.stack);
-    
-    return new Response(
-      JSON.stringify({ 
-        error: "Failed to generate content",
-        details: error instanceof Error ? error.message : String(error),
-        timestamp: new Date().toISOString()
-      }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders,
-        },
-      }
-    );
-  }
-});

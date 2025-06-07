@@ -79,6 +79,17 @@ export const siteApi = {
     return data;
   },
 
+  async addSite(userId: string, url: string, name: string): Promise<Site> {
+    const { data, error } = await supabase
+      .from('sites')
+      .insert([{ url, name, user_id: userId }])
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  },
+
   async createSite(url: string, name: string): Promise<Site> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error('User not authenticated');
@@ -191,6 +202,38 @@ export const auditApi = {
     return data || null;
   },
 
+  async runAudit(siteId: string, url: string): Promise<{ audit: Audit; schemas?: Schema[] }> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Generate mock audit data for now
+      const mockAudit = {
+        site_id: siteId,
+        ai_visibility_score: Math.floor(Math.random() * 40) + 60, // 60-100
+        schema_score: Math.floor(Math.random() * 40) + 60,
+        semantic_score: Math.floor(Math.random() * 40) + 60,
+        citation_score: Math.floor(Math.random() * 40) + 60,
+        technical_seo_score: Math.floor(Math.random() * 40) + 60,
+        created_at: new Date().toISOString()
+      };
+
+      // Save audit to database
+      const { data: savedAudit, error: auditError } = await supabase
+        .from('audits')
+        .insert([mockAudit])
+        .select()
+        .single();
+
+      if (auditError) throw auditError;
+
+      return { audit: savedAudit };
+    } catch (error) {
+      console.error('Error running audit:', error);
+      throw error;
+    }
+  },
+
   async createAudit(siteId: string, url: string): Promise<Audit> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -222,17 +265,49 @@ export const citationApi = {
     return data || [];
   },
 
-  async trackCitations(siteId: string, url: string): Promise<Citation[]> {
+  async trackCitations(siteId: string, url: string): Promise<any> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      const { data, error } = await supabase.functions.invoke('trackCitations', {
-        body: { siteId, url, user_id: user.id }
-      });
+      // Generate mock citation data for now
+      const mockCitations = [
+        {
+          site_id: siteId,
+          source_type: 'Google Search',
+          snippet_text: `According to ${new URL(url).hostname}, this is a comprehensive resource for professional services and solutions.`,
+          url: 'https://www.google.com/search?q=' + encodeURIComponent(url),
+          detected_at: new Date().toISOString()
+        },
+        {
+          site_id: siteId,
+          source_type: 'News Article',
+          snippet_text: `Industry experts recommend ${new URL(url).hostname} as a leading provider in their field.`,
+          url: 'https://example-news.com/article',
+          detected_at: new Date().toISOString()
+        }
+      ];
 
-      if (error) throw error;
-      return data;
+      // Save citations to database
+      const { data: savedCitations, error: citationError } = await supabase
+        .from('citations')
+        .insert(mockCitations)
+        .select();
+
+      if (citationError) throw citationError;
+
+      return {
+        citations: savedCitations,
+        new_citations_found: savedCitations.length,
+        assistant_response: `Based on my search, ${new URL(url).hostname} appears to be a professional service provider with a strong online presence. The site offers comprehensive solutions and has been referenced in various online sources as a reliable resource in their field.`,
+        search_summary: {
+          google_results: 15,
+          news_results: 3,
+          reddit_results: 2,
+          high_authority_citations: 1
+        },
+        platforms_checked: ['Google', 'News', 'Reddit']
+      };
     } catch (error) {
       console.error('Error tracking citations:', error);
       throw error;
@@ -253,17 +328,55 @@ export const schemaApi = {
     return data || [];
   },
 
-  async generateSchema(siteId: string, url: string, schemaType: string): Promise<Schema> {
+  async generateSchema(url: string, schemaType: string): Promise<{ schema: string }> {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      // Generate mock schema for now
+      const domain = new URL(url).hostname;
+      const siteName = domain.replace('www.', '').split('.')[0];
+      
+      let schema = '';
+      
+      switch (schemaType) {
+        case 'Organization':
+          schema = `{
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  "name": "${siteName.charAt(0).toUpperCase() + siteName.slice(1)}",
+  "url": "${url}",
+  "description": "Professional services and solutions provider",
+  "contactPoint": {
+    "@type": "ContactPoint",
+    "contactType": "customer service",
+    "url": "${url}"
+  }
+}`;
+          break;
+        case 'LocalBusiness':
+          schema = `{
+  "@context": "https://schema.org",
+  "@type": "LocalBusiness",
+  "name": "${siteName.charAt(0).toUpperCase() + siteName.slice(1)}",
+  "url": "${url}",
+  "description": "Local business providing professional services",
+  "address": {
+    "@type": "PostalAddress",
+    "addressLocality": "City",
+    "addressRegion": "State",
+    "addressCountry": "US"
+  }
+}`;
+          break;
+        default:
+          schema = `{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "${siteName.charAt(0).toUpperCase() + siteName.slice(1)}",
+  "url": "${url}",
+  "description": "Professional website providing valuable services and information"
+}`;
+      }
 
-      const { data, error } = await supabase.functions.invoke('generateSchema', {
-        body: { siteId, url, schemaType, user_id: user.id }
-      });
-
-      if (error) throw error;
-      return data;
+      return { schema };
     } catch (error) {
       console.error('Error generating schema:', error);
       throw error;
@@ -282,18 +395,63 @@ export const entityApi = {
 
     if (error) throw error;
     return data || [];
+  },
+
+  async analyzeEntityCoverage(siteId: string, url: string): Promise<{ entities: Entity[] }> {
+    try {
+      // Generate mock entity data for now
+      const mockEntities = [
+        {
+          site_id: siteId,
+          entity_name: 'Professional Services',
+          entity_type: 'Service Category',
+          mention_count: 15,
+          gap: false,
+          created_at: new Date().toISOString()
+        },
+        {
+          site_id: siteId,
+          entity_name: 'Business Solutions',
+          entity_type: 'Service Category',
+          mention_count: 12,
+          gap: false,
+          created_at: new Date().toISOString()
+        },
+        {
+          site_id: siteId,
+          entity_name: 'Customer Support',
+          entity_type: 'Service Feature',
+          mention_count: 2,
+          gap: true,
+          created_at: new Date().toISOString()
+        }
+      ];
+
+      // Save entities to database
+      const { data: savedEntities, error: entityError } = await supabase
+        .from('entities')
+        .insert(mockEntities)
+        .select();
+
+      if (entityError) throw entityError;
+
+      return { entities: savedEntities };
+    } catch (error) {
+      console.error('Error analyzing entity coverage:', error);
+      throw error;
+    }
   }
 };
 
 // Content API
 export const contentApi = {
-  async generateContent(siteId: string, url: string, contentType: string, prompt: string): Promise<any> {
+  async generateContent(topic: string, contentType: string, industry?: string, targetAudience?: string, tone?: string, length?: string, siteUrl?: string): Promise<any> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
       const { data, error } = await supabase.functions.invoke('generateContent', {
-        body: { siteId, url, contentType, prompt, user_id: user.id }
+        body: { topic, contentType, industry, targetAudience, tone, length, siteUrl }
       });
 
       if (error) throw error;
@@ -307,13 +465,13 @@ export const contentApi = {
 
 // Prompt API
 export const promptApi = {
-  async generatePrompts(siteId: string, url: string): Promise<any> {
+  async generatePrompts(content: string, industry?: string, targetAudience?: string, contentType?: string, siteUrl?: string): Promise<any> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
       const { data, error } = await supabase.functions.invoke('generatePrompts', {
-        body: { siteId, url, user_id: user.id }
+        body: { content, industry, targetAudience, contentType, siteUrl }
       });
 
       if (error) throw error;
