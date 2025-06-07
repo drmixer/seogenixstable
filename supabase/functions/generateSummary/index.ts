@@ -405,18 +405,20 @@ Write as a technical overview in 300-500 words with clear specifications.`
   } catch (error) {
     console.error('❌ Gemini API error:', error)
     console.log('🔄 Falling back to enhanced fallback content due to exception')
+    // Always return fallback content instead of throwing
     return generateEnhancedFallbackSummary(url, summaryType)
   }
 }
 
 function generateEnhancedFallbackSummary(url: string, summaryType: string): string {
-  const domain = new URL(url).hostname
-  const siteName = domain.replace('www.', '').split('.')[0]
-  const companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
-  
-  switch (summaryType) {
-    case 'SiteOverview':
-      return `# ${companyName} - Comprehensive Site Overview
+  try {
+    const domain = new URL(url).hostname
+    const siteName = domain.replace('www.', '').split('.')[0]
+    const companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
+    
+    switch (summaryType) {
+      case 'SiteOverview':
+        return `# ${companyName} - Comprehensive Site Overview
 
 ## Company Overview
 ${companyName} operates as a professional online platform providing comprehensive services and solutions through their website at ${url}. The organization focuses on delivering value through innovative approaches and reliable service delivery.
@@ -452,8 +454,8 @@ To learn more about ${companyName} and explore how they can help achieve your ob
 
 *This overview provides a comprehensive understanding of ${companyName}'s capabilities and value proposition for potential clients and partners.*`
 
-    case 'CompanyProfile':
-      return `# ${companyName} - Professional Company Profile
+      case 'CompanyProfile':
+        return `# ${companyName} - Professional Company Profile
 
 ## Company Background
 ${companyName} is a professional organization committed to delivering exceptional value through innovative solutions and superior service delivery. Operating through their digital platform at ${url}, they have established themselves as a reliable partner for businesses seeking comprehensive solutions.
@@ -490,8 +492,8 @@ ${companyName} has positioned itself as a trusted provider in the professional s
 
 ${companyName} welcomes opportunities to connect and discuss how they can help organizations achieve their objectives through proven methodologies and expert guidance.`
 
-    case 'ProductCatalog':
-      return `# ${companyName} - Service & Solution Catalog
+      case 'ProductCatalog':
+        return `# ${companyName} - Service & Solution Catalog
 
 ## Professional Services Portfolio
 
@@ -556,8 +558,8 @@ Ongoing assistance and maintenance
 ### Contact & Engagement
 Visit ${url} to learn more about specific services and discuss how ${companyName} can help achieve your business objectives.`
 
-    default:
-      return `# ${summaryType}: ${companyName}
+      default:
+        return `# ${summaryType}: ${companyName}
 
 ## Overview
 This comprehensive ${summaryType.toLowerCase()} provides detailed information about ${companyName} and their professional services platform at ${url}.
@@ -582,5 +584,24 @@ ${companyName} focuses on delivering measurable value through:
 To learn more about ${companyName} and their offerings, visit ${url} or contact their team directly to discuss specific needs and requirements.
 
 This ${summaryType.toLowerCase()} provides an overview of the key features and benefits available through their professional services platform.`
+    }
+  } catch (error) {
+    console.error('❌ Error in generateEnhancedFallbackSummary:', error)
+    // Return a basic fallback if even the enhanced fallback fails
+    return `# ${summaryType} Summary
+
+## Overview
+This is a summary for the website at ${url}. The content provides information about the services and capabilities available through this platform.
+
+## Key Features
+- Professional services and solutions
+- Expert guidance and support
+- Comprehensive resource access
+- Reliable service delivery
+
+## Getting Started
+Visit ${url} to learn more about the available services and how to get started.
+
+This summary provides basic information about the platform and its offerings.`
   }
 }
