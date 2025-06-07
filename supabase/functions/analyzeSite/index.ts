@@ -138,12 +138,14 @@ async function analyzeWithOpenAI(url: string, websiteContent: string): Promise<a
     throw new Error("OpenAI API key not configured");
   }
 
-  console.log("🤖 Calling OpenAI API for analysis...");
+  console.log("🤖 === STARTING OPENAI API CALL ===");
+  console.log(`🔑 API Key Status: PRESENT (${openaiApiKey.length} chars)`);
+  console.log(`🔑 Key Format: ${openaiApiKey.substring(0, 8)}...${openaiApiKey.substring(openaiApiKey.length - 4)}`);
   console.log(`📊 Content length being analyzed: ${websiteContent.length} characters`);
-  console.log(`🔑 Using API key: ${openaiApiKey.substring(0, 10)}...${openaiApiKey.substring(openaiApiKey.length - 4)}`);
   
   try {
     const analysisId = `OPENAI-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`🆔 Generated Analysis ID: ${analysisId}`);
     
     const requestBody = {
       model: "gpt-4o-mini", // Using the latest efficient model
@@ -193,7 +195,14 @@ Return ONLY a valid JSON response in this exact format:
       top_p: 0.9
     };
 
-    console.log("📤 Sending request to OpenAI API...");
+    console.log("📤 === SENDING REQUEST TO OPENAI ===");
+    console.log(`📋 Model: ${requestBody.model}`);
+    console.log(`📏 Max Tokens: ${requestBody.max_tokens}`);
+    console.log(`🌡️ Temperature: ${requestBody.temperature}`);
+    console.log(`📝 Message Count: ${requestBody.messages.length}`);
+    console.log(`📊 User Message Length: ${requestBody.messages[1].content.length} chars`);
+    
+    const startTime = Date.now();
     
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -206,77 +215,158 @@ Return ONLY a valid JSON response in this exact format:
       signal: AbortSignal.timeout(30000) // 30 second timeout
     });
 
-    console.log(`📥 OpenAI API response status: ${response.status}`);
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    
+    console.log(`📥 === OPENAI API RESPONSE ===`);
+    console.log(`⏱️ Request Duration: ${duration}ms`);
+    console.log(`📊 Response Status: ${response.status} ${response.statusText}`);
+    console.log(`📋 Response Headers:`, Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ OpenAI API error response:", errorText);
+      console.error("❌ === OPENAI API ERROR ===");
+      console.error(`💥 Status: ${response.status} ${response.statusText}`);
+      console.error(`📝 Error Body: ${errorText}`);
+      console.error(`🔍 Error Length: ${errorText.length} characters`);
+      
+      // Try to parse error as JSON for better debugging
+      try {
+        const errorJson = JSON.parse(errorText);
+        console.error(`🔍 Parsed Error JSON:`, errorJson);
+        
+        if (errorJson.error) {
+          console.error(`❌ Error Type: ${errorJson.error.type}`);
+          console.error(`❌ Error Code: ${errorJson.error.code}`);
+          console.error(`❌ Error Message: ${errorJson.error.message}`);
+        }
+      } catch (parseError) {
+        console.error(`❌ Could not parse error as JSON:`, parseError);
+      }
+      
       throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
     }
 
-    const data = await response.json();
-    console.log("✅ OpenAI API response received successfully");
-    console.log(`📊 Response usage:`, data.usage || 'No usage data');
+    const responseText = await response.text();
+    console.log(`📄 Response Body Length: ${responseText.length} characters`);
+    console.log(`🔍 First 200 chars: ${responseText.substring(0, 200)}...`);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText);
+      console.log("✅ Successfully parsed OpenAI response JSON");
+    } catch (parseError) {
+      console.error("❌ Failed to parse OpenAI response as JSON:", parseError);
+      console.error(`📝 Raw response: ${responseText}`);
+      throw new Error(`Invalid JSON response from OpenAI: ${parseError.message}`);
+    }
+    
+    console.log(`📊 Response Structure Check:`);
+    console.log(`   - Has choices: ${!!data.choices}`);
+    console.log(`   - Choices length: ${data.choices?.length || 0}`);
+    console.log(`   - Has first choice: ${!!data.choices?.[0]}`);
+    console.log(`   - Has message: ${!!data.choices?.[0]?.message}`);
+    console.log(`   - Has content: ${!!data.choices?.[0]?.message?.content}`);
+    
+    if (data.usage) {
+      console.log(`💰 Token Usage:`, data.usage);
+    }
     
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error("❌ Invalid OpenAI response structure");
+      console.error("📋 Full response:", data);
       throw new Error("Invalid response structure from OpenAI API");
     }
     
     const content = data.choices[0].message.content;
-    console.log(`📝 OpenAI response content length: ${content.length} characters`);
-    console.log(`🔍 First 200 chars of response: ${content.substring(0, 200)}...`);
+    console.log(`📝 === PROCESSING OPENAI CONTENT ===`);
+    console.log(`📏 Content Length: ${content.length} characters`);
+    console.log(`🔍 First 300 chars: ${content.substring(0, 300)}...`);
+    console.log(`🔍 Last 100 chars: ...${content.substring(content.length - 100)}`);
     
     // Try to extract JSON from the response
+    console.log("🔍 Searching for JSON in response...");
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error("❌ No JSON found in response:", content);
+      console.error("❌ No JSON found in OpenAI response");
+      console.error("📝 Full content:", content);
       throw new Error("No valid JSON found in OpenAI response");
     }
     
+    console.log(`✅ Found JSON match (${jsonMatch[0].length} chars)`);
+    console.log(`🔍 JSON Preview: ${jsonMatch[0].substring(0, 200)}...`);
+    
+    let parsed;
     try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      
-      // Validate the parsed response has required fields
-      const requiredFields = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
-      for (const field of requiredFields) {
-        if (typeof parsed[field] !== 'number') {
-          throw new Error(`Missing or invalid ${field} in response`);
-        }
-      }
-      
-      console.log("✅ Successfully parsed and validated OpenAI analysis");
-      console.log("📊 Scores received:", {
-        ai_visibility: parsed.ai_visibility_score,
-        schema: parsed.schema_score,
-        semantic: parsed.semantic_score,
-        citation: parsed.citation_score,
-        technical: parsed.technical_seo_score
-      });
-      
-      // Log the analysis ID to verify it's real
-      if (parsed.analysis_id) {
-        console.log(`🆔 Analysis ID from OpenAI: ${parsed.analysis_id}`);
-      }
-      
-      return parsed;
+      parsed = JSON.parse(jsonMatch[0]);
+      console.log("✅ Successfully parsed extracted JSON");
     } catch (parseError) {
-      console.error("❌ Failed to parse OpenAI JSON:", parseError);
-      console.error("🔍 Raw content:", content);
+      console.error("❌ Failed to parse extracted JSON:", parseError);
+      console.error("📝 JSON content:", jsonMatch[0]);
       throw new Error(`Invalid JSON format in OpenAI response: ${parseError.message}`);
     }
+    
+    // Validate the parsed response has required fields
+    console.log("🔍 === VALIDATING PARSED RESPONSE ===");
+    const requiredFields = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
+    const validationResults = {};
+    
+    for (const field of requiredFields) {
+      const hasField = field in parsed;
+      const isNumber = typeof parsed[field] === 'number';
+      const isValidRange = isNumber && parsed[field] >= 0 && parsed[field] <= 100;
+      
+      validationResults[field] = { hasField, isNumber, isValidRange, value: parsed[field] };
+      console.log(`   ${field}: ${hasField ? '✅' : '❌'} present, ${isNumber ? '✅' : '❌'} number, ${isValidRange ? '✅' : '❌'} valid range (${parsed[field]})`);
+      
+      if (!hasField || !isNumber) {
+        throw new Error(`Missing or invalid ${field} in response (got: ${typeof parsed[field]} = ${parsed[field]})`);
+      }
+    }
+    
+    console.log("✅ All required fields validated successfully");
+    console.log("📊 === FINAL SCORES ===");
+    console.log(`   AI Visibility: ${parsed.ai_visibility_score}/100`);
+    console.log(`   Schema: ${parsed.schema_score}/100`);
+    console.log(`   Semantic: ${parsed.semantic_score}/100`);
+    console.log(`   Citation: ${parsed.citation_score}/100`);
+    console.log(`   Technical: ${parsed.technical_seo_score}/100`);
+    
+    // Log the analysis ID to verify it's real
+    if (parsed.analysis_id) {
+      console.log(`🆔 Analysis ID from OpenAI: ${parsed.analysis_id}`);
+      if (parsed.analysis_id === analysisId) {
+        console.log("✅ Analysis ID matches expected value");
+      } else {
+        console.log("⚠️ Analysis ID doesn't match expected value");
+      }
+    } else {
+      console.log("⚠️ No analysis_id in response");
+    }
+    
+    console.log("🎉 === OPENAI ANALYSIS COMPLETE ===");
+    return parsed;
   } catch (error) {
-    console.error("💥 OpenAI API call failed:", error);
+    console.error("💥 === OPENAI API CALL FAILED ===");
+    console.error(`❌ Error Type: ${error.constructor.name}`);
+    console.error(`❌ Error Message: ${error.message}`);
+    console.error(`❌ Error Stack:`, error.stack);
     throw error;
   }
 }
 
 // Enhanced mock data that simulates real analysis
-const getEnhancedMockAnalysis = (url: string, websiteContent?: string) => {
-  console.log("🎭 Generating enhanced mock analysis based on actual website content...");
+const getEnhancedMockAnalysis = (url: string, websiteContent?: string, reason?: string) => {
+  console.log("🎭 === GENERATING ENHANCED MOCK ANALYSIS ===");
+  console.log(`🔍 Reason: ${reason || 'Not specified'}`);
+  console.log(`📊 Content available: ${!!websiteContent} (${websiteContent?.length || 0} chars)`);
   
   // Analyze the URL and content to generate more realistic scores
   const domain = new URL(url).hostname.toLowerCase();
   const mockId = `ENHANCED-MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log(`🆔 Generated Mock ID: ${mockId}`);
+  console.log(`🌐 Domain: ${domain}`);
   
   // Base scores that vary based on domain characteristics
   let baseScore = 70;
@@ -284,13 +374,18 @@ const getEnhancedMockAnalysis = (url: string, websiteContent?: string) => {
   // Adjust base score based on domain characteristics
   if (domain.includes('tech') || domain.includes('ai') || domain.includes('seo')) {
     baseScore += 10; // Tech domains likely have better structure
+    console.log("📈 +10 for tech domain");
   }
   if (domain.includes('blog') || domain.includes('news')) {
     baseScore += 5; // Content sites often have good structure
+    console.log("📈 +5 for content domain");
   }
   if (domain.length < 10) {
     baseScore += 5; // Shorter domains often more established
+    console.log("📈 +5 for short domain");
   }
+  
+  console.log(`📊 Base score: ${baseScore}`);
   
   // Generate realistic scores with some variation
   const variation = () => Math.floor(Math.random() * 20) - 10; // -10 to +10
@@ -302,6 +397,8 @@ const getEnhancedMockAnalysis = (url: string, websiteContent?: string) => {
     citation_score: Math.max(35, Math.min(85, baseScore - 10 + variation())), // Citation moderate
     technical_seo_score: Math.max(45, Math.min(90, baseScore + variation()))
   };
+  
+  console.log("📊 Generated scores:", scores);
   
   // Generate realistic analysis based on scores
   const getScoreDescription = (score: number) => {
@@ -324,7 +421,7 @@ Citation Potential (${scores.citation_score}/100): ${getScoreDescription(scores.
 
 Technical SEO (${scores.technical_seo_score}/100): ${getScoreDescription(scores.technical_seo_score)} - Basic technical factors ${scores.technical_seo_score >= 70 ? 'are well optimized' : 'need attention'}.
 
-⚠️ NOTE: This is enhanced mock data generated because the OpenAI API key is not configured. The scores are based on domain analysis and realistic patterns, but a real API analysis would provide more accurate results.`;
+⚠️ NOTE: This is enhanced mock data generated because: ${reason || 'the OpenAI API was not available'}. The scores are based on domain analysis and realistic patterns, but a real API analysis would provide more accurate results.`;
 
   const recommendations = [
     scores.schema_score < 70 ? "Implement comprehensive schema.org structured data markup" : "Enhance existing schema markup with additional entity types",
@@ -333,6 +430,8 @@ Technical SEO (${scores.technical_seo_score}/100): ${getScoreDescription(scores.
     scores.technical_seo_score < 70 ? "Improve page loading speed and mobile responsiveness" : "Fine-tune technical performance for optimal AI crawling",
     "Optimize content for voice search and natural language queries"
   ];
+  
+  console.log("✅ Mock analysis generated successfully");
   
   return {
     ...scores,
@@ -357,7 +456,10 @@ Deno.serve(async (req) => {
     const body: RequestBody = await req.json();
     const { site_id, url, user_id } = body;
 
-    console.log(`🚀 Starting analysis for site ${site_id}, URL: ${url}, User: ${user_id}`);
+    console.log(`🚀 === STARTING ANALYSIS ===`);
+    console.log(`📋 Site ID: ${site_id}`);
+    console.log(`🌐 URL: ${url}`);
+    console.log(`👤 User ID: ${user_id}`);
 
     if (!site_id || !url || !user_id) {
       return new Response(
@@ -375,7 +477,7 @@ Deno.serve(async (req) => {
     // Validate URL
     try {
       const urlObj = new URL(url);
-      console.log(`🔗 Analyzing URL: ${urlObj.href}`);
+      console.log(`✅ URL validation passed: ${urlObj.href}`);
     } catch {
       return new Response(
         JSON.stringify({ error: "Invalid URL format" }),
@@ -398,9 +500,9 @@ Deno.serve(async (req) => {
 
     // Always fetch website content for better mock analysis
     try {
-      console.log("🌐 Fetching website content for analysis...");
+      console.log("🌐 === FETCHING WEBSITE CONTENT ===");
       websiteContent = await fetchWebsiteContent(url);
-      console.log(`📄 Successfully fetched ${websiteContent.length} characters of content`);
+      console.log(`✅ Successfully fetched ${websiteContent.length} characters of content`);
     } catch (fetchError) {
       console.warn("⚠️ Could not fetch website content:", fetchError.message);
       websiteContent = `Basic analysis for ${url} - content fetch failed: ${fetchError.message}`;
@@ -439,10 +541,9 @@ Deno.serve(async (req) => {
                           !openaiApiKey.includes('demo-key');
     
     console.log(`✅ Final Validation Result: ${hasValidApiKey}`);
-    console.log("🔑 === END VALIDATION ===");
     
     if (!hasValidApiKey) {
-      console.log("❌ API Key Validation Failed - Detailed Reasons:");
+      console.log("❌ === API KEY VALIDATION FAILED ===");
       if (!openaiApiKey) {
         console.log("   ❌ Key is missing entirely");
       } else if (openaiApiKey.trim().length < 20) {
@@ -463,12 +564,12 @@ Deno.serve(async (req) => {
         console.log("   ❌ Key failed validation for unknown reason");
       }
     }
+    console.log("🔑 === END VALIDATION ===");
 
     // Try to get real analysis from OpenAI
     if (hasValidApiKey) {
       try {
         console.log("🤖 ✅ API KEY VALID - Attempting OpenAI API analysis...");
-        console.log(`🔑 Using key: ${openaiApiKey.substring(0, 8)}...${openaiApiKey.substring(openaiApiKey.length - 4)}`);
         
         scores = await analyzeWithOpenAI(url, websiteContent);
         analysisText = scores.analysis;
@@ -480,11 +581,13 @@ Deno.serve(async (req) => {
         console.log(`🆔 Analysis ID: ${analysisId}`);
         console.log(`📊 Data Source: ${scores.data_source || 'OpenAI GPT-4'}`);
       } catch (apiError) {
-        console.error("❌ OpenAI API failed:", apiError.message);
+        console.error("❌ === OPENAI API FAILED ===");
+        console.error(`💥 Error: ${apiError.message}`);
+        console.error(`🔍 Error Type: ${apiError.constructor.name}`);
         console.log("🔄 Falling back to enhanced mock analysis...");
         
-        scores = getEnhancedMockAnalysis(url, websiteContent);
-        analysisText = scores.analysis + ` (OpenAI API Error: ${apiError.message})`;
+        scores = getEnhancedMockAnalysis(url, websiteContent, `OpenAI API Error: ${apiError.message}`);
+        analysisText = scores.analysis;
         analysisId = scores.analysis_id;
         usingRealData = false;
         dataSource = "Enhanced Mock (API Failed)";
@@ -493,18 +596,20 @@ Deno.serve(async (req) => {
       console.log("❌ OpenAI API key validation failed");
       console.log("🔄 Using enhanced mock analysis based on website content...");
       
-      scores = getEnhancedMockAnalysis(url, websiteContent);
+      scores = getEnhancedMockAnalysis(url, websiteContent, "Invalid or missing OpenAI API key");
       analysisText = scores.analysis;
       analysisId = scores.analysis_id;
       usingRealData = false;
       dataSource = "Enhanced Mock (Invalid API Key)";
     }
 
-    console.log(`📊 Analysis complete. Using: ${dataSource}`);
-    console.log(`🆔 Final Analysis ID: ${analysisId}`);
+    console.log(`📊 === ANALYSIS COMPLETE ===`);
     console.log(`🎯 Real Data Status: ${usingRealData}`);
+    console.log(`📊 Data Source: ${dataSource}`);
+    console.log(`🆔 Final Analysis ID: ${analysisId}`);
 
     // Create audit with service role client
+    console.log("💾 === SAVING TO DATABASE ===");
     const { data: auditData, error: auditError } = await supabase
       .from("audits")
       .insert({
@@ -519,16 +624,17 @@ Deno.serve(async (req) => {
       .single();
 
     if (auditError) {
-      console.error("Database error creating audit:", auditError);
+      console.error("❌ Database error creating audit:", auditError);
       throw new Error(`Failed to create audit: ${auditError.message}`);
     }
 
-    console.log(`💾 Audit saved with ID: ${auditData.id}`);
+    console.log(`✅ Audit saved with ID: ${auditData.id}`);
 
     // Generate schemas with service role client
     const schemaTypes = ["FAQ", "HowTo", "Product"];
     const schemas = [];
 
+    console.log("📋 === GENERATING SCHEMAS ===");
     for (const schemaType of schemaTypes) {
       const { data: schemaData, error: schemaError } = await supabase
         .from("schemas")
@@ -541,11 +647,12 @@ Deno.serve(async (req) => {
         .single();
 
       if (schemaError) {
-        console.error(`Failed to create ${schemaType} schema:`, schemaError.message);
+        console.error(`❌ Failed to create ${schemaType} schema:`, schemaError.message);
         continue;
       }
 
       schemas.push(schemaData);
+      console.log(`✅ Generated ${schemaType} schema`);
     }
 
     console.log(`📋 Generated ${schemas.length} schema examples`);
@@ -562,8 +669,13 @@ Deno.serve(async (req) => {
       websiteContentLength: websiteContent.length
     };
 
-    console.log("🎉 Analysis complete and successful");
-    console.log(`🔍 FINAL VERIFICATION: Real Data = ${usingRealData}, Source = ${dataSource}, ID = ${analysisId}`);
+    console.log("🎉 === ANALYSIS COMPLETE AND SUCCESSFUL ===");
+    console.log(`🔍 FINAL VERIFICATION:`);
+    console.log(`   Real Data: ${usingRealData}`);
+    console.log(`   Source: ${dataSource}`);
+    console.log(`   ID: ${analysisId}`);
+    console.log(`   Audit DB ID: ${auditData.id}`);
+    console.log(`   Schemas: ${schemas.length}`);
 
     return new Response(
       JSON.stringify(response),
@@ -576,7 +688,10 @@ Deno.serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error("💥 Error in analyzeSite function:", error);
+    console.error("💥 === CRITICAL ERROR IN ANALYZE SITE ===");
+    console.error(`❌ Error Type: ${error.constructor.name}`);
+    console.error(`❌ Error Message: ${error.message}`);
+    console.error(`❌ Error Stack:`, error.stack);
     
     return new Response(
       JSON.stringify({ 
