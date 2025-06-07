@@ -131,7 +131,7 @@ export const summaryApi = {
 
       if (error) {
         console.error('❌ Edge function error:', error);
-        throw new Error(`Edge function failed: ${error.message}`);
+        throw error;
       }
 
       if (!data) {
@@ -160,7 +160,7 @@ export const summaryApi = {
 
     } catch (error) {
       console.error('❌ Summary generation failed:', error);
-      throw new Error(`Failed to send a request to the Edge Function`);
+      throw error;
     }
   }
 };
