@@ -6,7 +6,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
-// Get environment variables - try multiple possible names
+// Get environment variables
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
@@ -22,19 +22,8 @@ console.log("🔧 Environment check:", {
   supabaseServiceKey: !!supabaseServiceKey,
   deepseekApiKey: !!deepseekApiKey,
   deepseekKeyLength: deepseekApiKey?.length || 0,
-  deepseekKeyPrefix: deepseekApiKey?.substring(0, 15) + "..." || "none",
-  allEnvVars: Object.keys(Deno.env.toObject()).sort()
+  deepseekKeyPrefix: deepseekApiKey?.substring(0, 15) + "..." || "none"
 });
-
-// Log all environment variables that might be related
-const allEnvVars = Deno.env.toObject();
-const relevantVars = Object.keys(allEnvVars).filter(key => 
-  key.includes('DEEPSEEK') || 
-  key.includes('API') || 
-  key.includes('KEY') ||
-  key.includes('SUPABASE')
-);
-console.log("🔍 All relevant environment variables:", relevantVars);
 
 // Validate required environment variables
 if (!supabaseUrl || !supabaseServiceKey) {
@@ -417,11 +406,21 @@ Deno.serve(async (req) => {
       websiteContent = `Basic analysis for ${url} - content fetch failed: ${fetchError.message}`;
     }
 
+    // Check if DeepSeek API key is properly configured
+    const hasValidApiKey = deepseekApiKey && deepseekApiKey.length > 20 && deepseekApiKey.startsWith('sk-');
+    
+    console.log(`🔑 DeepSeek API Key Check:`, {
+      present: !!deepseekApiKey,
+      length: deepseekApiKey?.length || 0,
+      startsWithSk: deepseekApiKey?.startsWith('sk-') || false,
+      isValid: hasValidApiKey
+    });
+
     // Try to get real analysis from DeepSeek
-    if (deepseekApiKey && deepseekApiKey.length > 10) {
+    if (hasValidApiKey) {
       try {
         console.log("🤖 Attempting DeepSeek API analysis...");
-        console.log(`🔑 API Key Status: Present (${deepseekApiKey.length} characters)`);
+        console.log(`🔑 API Key Status: Valid (${deepseekApiKey.length} characters)`);
         
         scores = await analyzeWithDeepSeek(url, websiteContent);
         analysisText = scores.analysis;
@@ -443,15 +442,15 @@ Deno.serve(async (req) => {
         dataSource = "Enhanced Mock (API Failed)";
       }
     } else {
-      console.log("❌ DeepSeek API key not configured or too short");
-      console.log(`🔍 Key status: ${deepseekApiKey ? `Present but only ${deepseekApiKey.length} chars` : 'Missing entirely'}`);
+      console.log("❌ DeepSeek API key not properly configured");
+      console.log(`🔍 Key status: ${deepseekApiKey ? `Present but invalid format (${deepseekApiKey.length} chars, starts with: ${deepseekApiKey.substring(0, 3)})` : 'Missing entirely'}`);
       console.log("🔄 Using enhanced mock analysis based on website content...");
       
       scores = getEnhancedMockAnalysis(url, websiteContent);
       analysisText = scores.analysis;
       analysisId = scores.analysis_id;
       usingRealData = false;
-      dataSource = "Enhanced Mock (No API Key)";
+      dataSource = "Enhanced Mock (Invalid API Key)";
     }
 
     console.log(`📊 Analysis complete. Using: ${dataSource}`);
