@@ -38,6 +38,24 @@ export interface Summary {
   created_at: string;
 }
 
+export interface Schema {
+  id: string;
+  audit_id: string;
+  schema_type: string;
+  markup: string;
+  created_at: string;
+}
+
+export interface Entity {
+  id: string;
+  site_id: string;
+  entity_name: string;
+  entity_type: string;
+  mention_count: number;
+  gap: boolean;
+  created_at: string;
+}
+
 // Site API
 export const siteApi = {
   async getSites(): Promise<Site[]> {
@@ -48,6 +66,17 @@ export const siteApi = {
 
     if (error) throw error;
     return data || [];
+  },
+
+  async getSite(id: string): Promise<Site> {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    return data;
   },
 
   async createSite(url: string, name: string): Promise<Site> {
@@ -149,10 +178,26 @@ export const auditApi = {
     return data || [];
   },
 
+  async getLatestAudit(siteId: string): Promise<Audit | null> {
+    const { data, error } = await supabase
+      .from('audits')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data || null;
+  },
+
   async createAudit(siteId: string, url: string): Promise<Audit> {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase.functions.invoke('analyzeSite', {
-        body: { siteId, url }
+        body: { siteId, url, user_id: user.id }
       });
 
       if (error) throw error;
@@ -179,14 +224,102 @@ export const citationApi = {
 
   async trackCitations(siteId: string, url: string): Promise<Citation[]> {
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase.functions.invoke('trackCitations', {
-        body: { siteId, url }
+        body: { siteId, url, user_id: user.id }
       });
 
       if (error) throw error;
       return data;
     } catch (error) {
       console.error('Error tracking citations:', error);
+      throw error;
+    }
+  }
+};
+
+// Schema API
+export const schemaApi = {
+  async getSchemas(auditId: string): Promise<Schema[]> {
+    const { data, error } = await supabase
+      .from('schemas')
+      .select('*')
+      .eq('audit_id', auditId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  async generateSchema(siteId: string, url: string, schemaType: string): Promise<Schema> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data, error } = await supabase.functions.invoke('generateSchema', {
+        body: { siteId, url, schemaType, user_id: user.id }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error generating schema:', error);
+      throw error;
+    }
+  }
+};
+
+// Entity API
+export const entityApi = {
+  async getEntities(siteId: string): Promise<Entity[]> {
+    const { data, error } = await supabase
+      .from('entities')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('mention_count', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  }
+};
+
+// Content API
+export const contentApi = {
+  async generateContent(siteId: string, url: string, contentType: string, prompt: string): Promise<any> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data, error } = await supabase.functions.invoke('generateContent', {
+        body: { siteId, url, contentType, prompt, user_id: user.id }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error generating content:', error);
+      throw error;
+    }
+  }
+};
+
+// Prompt API
+export const promptApi = {
+  async generatePrompts(siteId: string, url: string): Promise<any> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data, error } = await supabase.functions.invoke('generatePrompts', {
+        body: { siteId, url, user_id: user.id }
+      });
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Error generating prompts:', error);
       throw error;
     }
   }
