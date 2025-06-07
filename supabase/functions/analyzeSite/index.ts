@@ -9,14 +9,14 @@ const corsHeaders = {
 // Get environment variables
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
+const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY");
 
 // Validate required environment variables
-if (!supabaseUrl || !supabaseServiceKey || !geminiApiKey) {
+if (!supabaseUrl || !supabaseServiceKey || !deepseekApiKey) {
   console.error("Missing required environment variables:", {
     supabaseUrl: !!supabaseUrl,
     supabaseServiceKey: !!supabaseServiceKey,
-    geminiApiKey: !!geminiApiKey
+    deepseekApiKey: !!deepseekApiKey
   });
   throw new Error("Missing required environment variables");
 }
@@ -76,19 +76,20 @@ Deno.serve(async (req) => {
     // Skip usage tracking for now to avoid constraint issues
     console.log("Skipping usage tracking for user:", user_id);
 
-    // Call Gemini API with the correct model name
-    const geminiResponse = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`,
+    // Call DeepSeek API
+    const deepseekResponse = await fetch(
+      "https://api.deepseek.com/v1/chat/completions",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-goog-api-key": geminiApiKey
+          "Authorization": `Bearer ${deepseekApiKey}`
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `Analyze this website: ${url}
+          model: "DeepSeek-R1-0528",
+          messages: [{
+            role: "user",
+            content: `Analyze this website: ${url}
 
 Please provide a comprehensive analysis focusing on:
 1. AI Visibility Score (0-100)
@@ -104,21 +105,22 @@ For each score, consider:
 - Citation: Likelihood of being cited by AI systems
 - Technical: Basic SEO factors that affect AI crawling
 
-Return the scores in a structured format.`
-            }]
-          }]
+Return the scores in a structured format with brief explanations for each score.`
+          }],
+          max_tokens: 1000,
+          temperature: 0.7
         })
       }
     );
 
-    if (!geminiResponse.ok) {
-      const errorData = await geminiResponse.text();
-      console.error("Gemini API error:", errorData);
-      throw new Error(`Gemini API error: ${errorData}`);
+    if (!deepseekResponse.ok) {
+      const errorData = await deepseekResponse.text();
+      console.error("DeepSeek API error:", errorData);
+      throw new Error(`DeepSeek API error: ${errorData}`);
     }
 
-    const geminiData = await geminiResponse.json();
-    const analysisText = geminiData.candidates[0].content.parts[0].text;
+    const deepseekData = await deepseekResponse.json();
+    const analysisText = deepseekData.choices[0].message.content;
 
     // Extract scores from the analysis text
     // For now, we'll use random scores since parsing the AI response would need more complex logic
