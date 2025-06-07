@@ -188,6 +188,35 @@ export const schemaApi = {
   }
 };
 
+// API functions for content generation
+export const contentApi = {
+  generateContent: async (params: {
+    topic: string;
+    contentType: string;
+    industry: string;
+    targetAudience: string;
+    tone: string;
+    length: string;
+    siteUrl: string;
+  }) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const result = await callEdgeFunction('generateContent', {
+      topic: params.topic,
+      content_type: params.contentType,
+      industry: params.industry,
+      target_audience: params.targetAudience,
+      tone: params.tone,
+      length: params.length,
+      site_url: params.siteUrl,
+      user_id: user.id
+    });
+    
+    return result;
+  }
+};
+
 // API functions for prompts
 export const promptApi = {
   generatePrompts: async (siteId: string, url: string) => {
