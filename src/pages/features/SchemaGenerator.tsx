@@ -207,8 +207,8 @@ const SchemaGenerator = () => {
                   <h3 className="text-md font-medium text-gray-900 mb-2">How to Implement:</h3>
                   <ol className="list-decimal list-inside space-y-2 text-gray-600">
                     <li>Copy the generated schema</li>
-                    <li>Paste it into a <code className="bg-gray-100 px-1 py-0.5 rounded text-sm"><script type="application/ld+json"></code> tag</li>
-                    <li>Add the script to the <code className="bg-gray-100 px-1 py-0.5 rounded text-sm"><head></code> section of your HTML</li>
+                    <li>Paste it into a <code className="bg-gray-100 px-1 py-0.5 rounded text-sm">&lt;script type="application/ld+json"&gt;</code> tag</li>
+                    <li>Add the script to the <code className="bg-gray-100 px-1 py-0.5 rounded text-sm">&lt;head&gt;</code> section of your HTML</li>
                     <li>Test using <a href="https://validator.schema.org/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-500">Schema.org Validator</a></li>
                   </ol>
                 </div>
