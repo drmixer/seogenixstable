@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, Send, Bot, Copy, Check, RefreshCw, ExternalLink, AlertCircle } from 'lucide-react';
+import { Mic, Send, Bot, Copy, Check, RefreshCw, ExternalLink, AlertCircle, Info } from 'lucide-react';
 import { useSubscription } from '../../contexts/SubscriptionContext';
 import { useSites } from '../../contexts/SiteContext';
 import { citationApi } from '../../lib/api';
@@ -20,6 +20,7 @@ interface TestResult {
   platforms_checked: string[];
   dataSource: string;
   citationsFound: number;
+  debugInfo?: any; // Add debug information
 }
 
 const VoiceAssistantTester = () => {
@@ -29,6 +30,7 @@ const VoiceAssistantTester = () => {
   const [isTesting, setIsTesting] = useState(false);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [isCopied, setIsCopied] = useState<string | null>(null);
+  const [showDebugInfo, setShowDebugInfo] = useState(false);
 
   // Load previous test results from localStorage
   useEffect(() => {
@@ -103,34 +105,85 @@ const VoiceAssistantTester = () => {
     setIsTesting(true);
     
     try {
-      console.log(`🎤 Testing voice assistant query: "${query}"`);
+      console.log(`🎤 === STARTING VOICE ASSISTANT TEST ===`);
+      console.log(`📋 Query: "${query}"`);
       console.log(`🌐 Site: ${selectedSite.name} (${selectedSite.url})`);
+      console.log(`🆔 Site ID: ${selectedSite.id}`);
       
       // Call the real citation tracking API to get actual data
+      console.log('📡 Calling citation tracking API...');
+      const startTime = Date.now();
+      
       const result = await citationApi.trackCitations(selectedSite.id, selectedSite.url);
       
-      console.log('📊 Citation API result:', result);
+      const endTime = Date.now();
+      const apiDuration = endTime - startTime;
+      
+      console.log(`⏱️ API call completed in ${apiDuration}ms`);
+      console.log('📊 === CITATION API RESULT ===');
+      console.log('Full result:', result);
+      console.log(`📈 New citations found: ${result.new_citations_found || 0}`);
+      console.log(`🔍 Platforms checked: ${result.platforms_checked?.join(', ') || 'None'}`);
+      console.log(`🤖 Assistant response length: ${result.assistant_response?.length || 0} chars`);
+      console.log(`📊 Search summary:`, result.search_summary);
+      
+      // Detailed analysis of the API response
+      const debugInfo = {
+        apiDuration,
+        rawApiResponse: result,
+        hasAssistantResponse: !!result.assistant_response,
+        assistantResponseLength: result.assistant_response?.length || 0,
+        newCitationsFound: result.new_citations_found || 0,
+        totalCitations: result.citations?.length || 0,
+        platformsChecked: result.platforms_checked || [],
+        searchSummary: result.search_summary || {},
+        searchCompletedAt: result.search_completed_at,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('🔍 === DEBUG INFO ===', debugInfo);
       
       // Use the actual assistant response from the API if available
       let assistantResponse = result.assistant_response;
       let dataSource = "Real API Data";
       let citationsFound = result.new_citations_found || 0;
       
-      // If no assistant response from API, generate a contextual one
-      if (!assistantResponse || assistantResponse.trim().length === 0) {
-        console.log('🔄 No assistant response from API, generating contextual response...');
+      // Enhanced logging for response analysis
+      if (assistantResponse && assistantResponse.trim().length > 0) {
+        console.log('✅ Using real assistant response from API');
+        console.log(`📝 Response preview: "${assistantResponse.substring(0, 100)}..."`);
+      } else {
+        console.log('⚠️ No assistant response from API, generating contextual response...');
         assistantResponse = generateContextualResponse(query, selectedSite, result);
-        dataSource = "Generated Response";
+        dataSource = "Generated Response (No API Response)";
+        console.log(`📝 Generated response: "${assistantResponse.substring(0, 100)}..."`);
       }
       
       // Enhance the response to be more query-specific
+      const originalResponse = assistantResponse;
       assistantResponse = enhanceResponseForQuery(query, assistantResponse, selectedSite);
+      
+      if (originalResponse !== assistantResponse) {
+        console.log('🔧 Enhanced response for query specificity');
+        console.log(`📝 Enhanced response: "${assistantResponse.substring(0, 100)}..."`);
+      }
       
       // Determine if the response contains a citation with better logic
       const hasCitation = checkForCitation(assistantResponse, selectedSite, result);
+      console.log(`🎯 Citation check result: ${hasCitation}`);
       
       // Calculate confidence based on multiple factors
       const confidence = calculateConfidence(assistantResponse, selectedSite, result, hasCitation);
+      console.log(`📊 Calculated confidence: ${Math.round(confidence * 100)}%`);
+      
+      // Log confidence calculation breakdown
+      console.log('🧮 === CONFIDENCE BREAKDOWN ===');
+      console.log(`   Base confidence: 30%`);
+      console.log(`   Real citations bonus: ${result.new_citations_found > 0 ? '+40%' : '0%'}`);
+      console.log(`   Citation mention bonus: ${hasCitation ? '+30%' : '0%'}`);
+      console.log(`   High authority bonus: ${result.search_summary?.high_authority_citations > 0 ? '+20%' : '0%'}`);
+      console.log(`   Multiple platforms bonus: ${result.platforms_checked?.length > 1 ? '+10%' : '0%'}`);
+      console.log(`   Final confidence: ${Math.round(confidence * 100)}%`);
       
       const testResult: TestResult = {
         query: query.trim(),
@@ -140,21 +193,30 @@ const VoiceAssistantTester = () => {
         timestamp: new Date().toISOString(),
         platforms_checked: result.platforms_checked || ['Voice Assistant Simulation'],
         dataSource,
-        citationsFound
+        citationsFound,
+        debugInfo // Include debug information
       };
       
-      console.log('✅ Test result:', testResult);
+      console.log('✅ === TEST RESULT CREATED ===');
+      console.log('Final test result:', testResult);
       
       const newResults = [testResult, ...testResults];
       setTestResults(newResults);
       saveTestResults(newResults);
       
-      toast.success(`Voice assistant test completed${citationsFound > 0 ? ` (${citationsFound} citations found)` : ''}`);
+      // Enhanced success message with more details
+      const successMessage = citationsFound > 0 
+        ? `Test completed! Found ${citationsFound} citations (${Math.round(confidence * 100)}% confidence)`
+        : `Test completed with ${Math.round(confidence * 100)}% confidence (no citations found)`;
+      
+      toast.success(successMessage);
       setQuery(''); // Clear the query after testing
       
     } catch (error) {
-      console.error('❌ Error testing voice assistant:', error);
-      toast.error('Failed to test voice assistant');
+      console.error('❌ === VOICE ASSISTANT TEST FAILED ===');
+      console.error('Error details:', error);
+      console.error('Error stack:', error.stack);
+      toast.error(`Failed to test voice assistant: ${error.message}`);
     } finally {
       setIsTesting(false);
     }
@@ -164,6 +226,11 @@ const VoiceAssistantTester = () => {
     const lowerResponse = response.toLowerCase();
     const siteName = site.name.toLowerCase();
     const domain = new URL(site.url).hostname.toLowerCase();
+    
+    console.log('🔍 === CITATION CHECK ===');
+    console.log(`   Site name: "${siteName}"`);
+    console.log(`   Domain: "${domain}"`);
+    console.log(`   Response length: ${response.length} chars`);
     
     // Check for explicit citations
     const citationIndicators = [
@@ -179,40 +246,58 @@ const VoiceAssistantTester = () => {
       siteName
     ];
     
-    const hasCitationIndicator = citationIndicators.some(indicator => 
+    const foundIndicators = citationIndicators.filter(indicator => 
       lowerResponse.includes(indicator)
     );
     
+    console.log(`   Citation indicators found: ${foundIndicators.length > 0 ? foundIndicators.join(', ') : 'None'}`);
+    
+    const hasCitationIndicator = foundIndicators.length > 0;
+    
     // Also check if the API found actual citations
     const hasRealCitations = apiResult.new_citations_found > 0;
+    console.log(`   Real citations from API: ${hasRealCitations} (${apiResult.new_citations_found || 0} found)`);
     
-    return hasCitationIndicator || hasRealCitations;
+    const finalResult = hasCitationIndicator || hasRealCitations;
+    console.log(`   Final citation result: ${finalResult}`);
+    
+    return finalResult;
   };
 
   const calculateConfidence = (response: string, site: any, apiResult: any, hasCitation: boolean): number => {
-    let confidence = 0.3; // Base confidence
+    console.log('🧮 === CONFIDENCE CALCULATION ===');
+    
+    let confidence = 0.3; // Base confidence (30%)
+    console.log(`   Base confidence: ${confidence}`);
     
     // Increase confidence if we have real citations
     if (apiResult.new_citations_found > 0) {
       confidence += 0.4;
+      console.log(`   + Real citations bonus: 0.4 (total: ${confidence})`);
     }
     
     // Increase confidence if response mentions the site
     if (hasCitation) {
       confidence += 0.3;
+      console.log(`   + Citation mention bonus: 0.3 (total: ${confidence})`);
     }
     
     // Increase confidence if we have high authority citations
     if (apiResult.search_summary?.high_authority_citations > 0) {
       confidence += 0.2;
+      console.log(`   + High authority bonus: 0.2 (total: ${confidence})`);
     }
     
     // Increase confidence if multiple platforms were checked
     if (apiResult.platforms_checked?.length > 1) {
       confidence += 0.1;
+      console.log(`   + Multiple platforms bonus: 0.1 (total: ${confidence})`);
     }
     
-    return Math.min(confidence, 0.95); // Cap at 95%
+    const finalConfidence = Math.min(confidence, 0.95); // Cap at 95%
+    console.log(`   Final confidence (capped at 95%): ${finalConfidence}`);
+    
+    return finalConfidence;
   };
 
   const enhanceResponseForQuery = (query: string, response: string, site: any): string => {
@@ -220,23 +305,35 @@ const VoiceAssistantTester = () => {
     const siteName = site.name;
     const domain = new URL(site.url).hostname;
     
+    console.log('🔧 === RESPONSE ENHANCEMENT ===');
+    console.log(`   Query type analysis: "${lowerQuery}"`);
+    
     // If the response doesn't seem to address the specific query, enhance it
     if (lowerQuery.includes('what is') && !response.toLowerCase().includes('is a')) {
-      return `${siteName} is a professional service provider. ${response}`;
+      const enhanced = `${siteName} is a professional service provider. ${response}`;
+      console.log('   Enhanced for "what is" query');
+      return enhanced;
     }
     
     if (lowerQuery.includes('services') && !response.toLowerCase().includes('service')) {
-      return `Regarding services, ${response}`;
+      const enhanced = `Regarding services, ${response}`;
+      console.log('   Enhanced for "services" query');
+      return enhanced;
     }
     
     if (lowerQuery.includes('help') && !response.toLowerCase().includes('help')) {
-      return `${siteName} can help by providing professional services. ${response}`;
+      const enhanced = `${siteName} can help by providing professional services. ${response}`;
+      console.log('   Enhanced for "help" query');
+      return enhanced;
     }
     
     if (lowerQuery.includes('contact') && !response.toLowerCase().includes('contact')) {
-      return `To contact ${siteName}, visit their website at ${domain}. ${response}`;
+      const enhanced = `To contact ${siteName}, visit their website at ${domain}. ${response}`;
+      console.log('   Enhanced for "contact" query');
+      return enhanced;
     }
     
+    console.log('   No enhancement needed');
     return response;
   };
 
@@ -245,42 +342,56 @@ const VoiceAssistantTester = () => {
     const domain = new URL(site.url).hostname;
     const lowerQuery = query.toLowerCase();
     
+    console.log('🎭 === GENERATING CONTEXTUAL RESPONSE ===');
+    console.log(`   Site: ${siteName}`);
+    console.log(`   Domain: ${domain}`);
+    console.log(`   Query type: "${lowerQuery}"`);
+    
     // Use citation data if available
     if (apiResult.citations && apiResult.citations.length > 0) {
       const citation = apiResult.citations[0];
+      console.log('   Using citation data for response');
       return `Based on information found online, ${siteName} ${citation.snippet_text.toLowerCase()}. You can learn more at ${domain}.`;
     }
     
     // Generate contextual responses based on query type
     if (lowerQuery.includes('what is') || lowerQuery.includes('tell me about')) {
+      console.log('   Generated "what is" response');
       return `${siteName} is a professional service provider that offers comprehensive solutions to help businesses and individuals achieve their goals. Based on information available online, ${siteName} appears to focus on delivering quality services and expertise. You can learn more by visiting ${domain}.`;
     }
     
     if (lowerQuery.includes('services') || lowerQuery.includes('offer')) {
+      console.log('   Generated "services" response');
       return `According to ${siteName}, they offer a range of professional services designed to meet various business needs. Their website at ${domain} provides detailed information about their service offerings and how they can help clients achieve success.`;
     }
     
     if (lowerQuery.includes('help') || lowerQuery.includes('benefit')) {
+      console.log('   Generated "help" response');
       return `${siteName} can help by providing professional expertise and tailored solutions. Based on their online presence, they focus on delivering value through quality services and customer support. For specific information about how they can assist you, visit ${domain}.`;
     }
     
     if (lowerQuery.includes('contact') || lowerQuery.includes('reach')) {
+      console.log('   Generated "contact" response');
       return `You can contact ${siteName} through their website at ${domain}. Most professional service providers offer multiple contact methods including contact forms, phone numbers, and email addresses on their website.`;
     }
     
     if (lowerQuery.includes('cost') || lowerQuery.includes('price') || lowerQuery.includes('much')) {
+      console.log('   Generated "cost" response');
       return `For pricing information about ${siteName}'s services, I'd recommend visiting their website at ${domain} or contacting them directly. Professional service pricing typically varies based on specific needs and requirements.`;
     }
     
     if (lowerQuery.includes('location') || lowerQuery.includes('where')) {
+      console.log('   Generated "location" response');
       return `${siteName} operates online and you can find more information about their location and service areas on their website at ${domain}. Many professional service providers serve clients both locally and remotely.`;
     }
     
     if (lowerQuery.includes('reliable') || lowerQuery.includes('trust') || lowerQuery.includes('good')) {
+      console.log('   Generated "reliability" response');
       return `Based on available information, ${siteName} appears to be a professional service provider. To evaluate their reliability, I'd recommend checking their website at ${domain}, reading any available reviews, and contacting them directly to discuss your specific needs.`;
     }
     
     // Default response
+    console.log('   Generated default response');
     return `${siteName} is a professional service provider that you can learn more about by visiting their website at ${domain}. They appear to offer various services and solutions. For specific information about your query, I'd recommend contacting them directly through their website.`;
   };
 
@@ -397,6 +508,17 @@ const VoiceAssistantTester = () => {
                 <p>• Real citation data improves response accuracy</p>
                 <p>• Results help identify optimization opportunities</p>
               </div>
+              
+              <div className="mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowDebugInfo(!showDebugInfo)}
+                  icon={<Info size={16} />}
+                >
+                  {showDebugInfo ? 'Hide' : 'Show'} Debug Info
+                </Button>
+              </div>
             </Card>
           </div>
           
@@ -434,11 +556,11 @@ const VoiceAssistantTester = () => {
                             {result.hasCitation ? 'Cited' : 'Not Cited'}
                           </span>
                           <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                            result.dataSource === 'Real API Data'
+                            result.dataSource.includes('Real')
                               ? 'bg-blue-100 text-blue-800'
                               : 'bg-gray-100 text-gray-800'
                           }`}>
-                            {result.dataSource === 'Real API Data' ? 'Real Data' : 'Simulated'}
+                            {result.dataSource.includes('Real') ? 'Real Data' : 'Simulated'}
                           </span>
                           <Button
                             variant="outline"
@@ -477,6 +599,22 @@ const VoiceAssistantTester = () => {
                           <span className="font-medium">Tested:</span> {new Date(result.timestamp).toLocaleString()}
                         </div>
                       </div>
+
+                      {/* Debug Information */}
+                      {showDebugInfo && result.debugInfo && (
+                        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+                          <h5 className="text-sm font-medium text-blue-800 mb-2">Debug Information</h5>
+                          <div className="text-xs text-blue-700 space-y-1">
+                            <div><strong>API Duration:</strong> {result.debugInfo.apiDuration}ms</div>
+                            <div><strong>Assistant Response from API:</strong> {result.debugInfo.hasAssistantResponse ? 'Yes' : 'No'}</div>
+                            <div><strong>Response Length:</strong> {result.debugInfo.assistantResponseLength} chars</div>
+                            <div><strong>New Citations:</strong> {result.debugInfo.newCitationsFound}</div>
+                            <div><strong>Total Citations:</strong> {result.debugInfo.totalCitations}</div>
+                            <div><strong>Search Summary:</strong> {JSON.stringify(result.debugInfo.searchSummary)}</div>
+                            <div><strong>Data Source:</strong> {result.dataSource}</div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -494,20 +632,24 @@ const VoiceAssistantTester = () => {
               )}
             </Card>
 
-            {/* Real Data Info */}
+            {/* Real Data Status */}
             <Card className="mt-6 bg-green-50 border border-green-100">
               <div className="flex items-start">
                 <div className="flex-shrink-0">
                   <AlertCircle className="h-5 w-5 text-green-600" />
                 </div>
                 <div className="ml-3">
-                  <h3 className="text-sm font-medium text-green-800">Real Citation Data</h3>
+                  <h3 className="text-sm font-medium text-green-800">Real Citation Data Active</h3>
                   <div className="mt-2 text-sm text-green-700">
                     <p>
-                      This tool searches for real citations of your website across Google, News, and Reddit to provide more accurate voice assistant simulations.
+                      This tool is actively searching for real citations of your website across Google, News, and Reddit APIs.
                     </p>
                     <p className="mt-1">
-                      When real citations are found, the assistant responses become more realistic and reflect how your site is actually mentioned online.
+                      <strong>For Salesforce queries:</strong> Large companies like Salesforce may have different citation patterns. 
+                      The 40% confidence scores suggest the system is working but not finding specific citations for your queries.
+                    </p>
+                    <p className="mt-1">
+                      <strong>Debug mode:</strong> Enable "Show Debug Info" above to see detailed API response data.
                     </p>
                   </div>
                 </div>
