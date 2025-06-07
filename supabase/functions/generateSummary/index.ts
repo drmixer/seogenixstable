@@ -193,7 +193,7 @@ ${structuredData}
 async function generateSummaryWithGemini(url: string, summaryType: string, websiteContent: string): Promise<any> {
   if (!validateGeminiApiKey()) {
     console.log("⚠️ Gemini API key validation failed, using enhanced fallback");
-    return null;
+    throw new Error("GEMINI_API_KEY is not properly configured. Please set a valid Gemini API key in your Supabase project environment variables.");
   }
 
   try {
@@ -318,32 +318,37 @@ Focus on technical aspects and capabilities.`
 
     const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview;
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.3,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048,
-          }
-        }),
-        signal: AbortSignal.timeout(30000)
-      }
-    );
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`;
+    
+    console.log("🔗 Making request to Gemini API...");
+    
+    const response = await fetch(geminiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: prompt
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.3,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        }
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    console.log(`📡 Gemini API Response Status: ${response.status}`);
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error(`❌ Gemini API Error Response: ${errorText}`);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
@@ -357,12 +362,20 @@ Focus on technical aspects and capabilities.`
         word_count: content.trim().split(/\s+/).length
       };
     } else {
-      throw new Error("Invalid response format from Gemini");
+      console.error("❌ Invalid response format from Gemini:", JSON.stringify(data, null, 2));
+      throw new Error("Invalid response format from Gemini API");
     }
     
   } catch (error) {
     console.error("❌ Error generating summary with Gemini:", error);
-    return null;
+    
+    // Check if it's a network/fetch error
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      throw new Error("Failed to connect to Gemini API. Please check your GEMINI_API_KEY configuration and network connectivity.");
+    }
+    
+    // Re-throw the original error
+    throw error;
   }
 }
 
@@ -743,12 +756,41 @@ Deno.serve(async (req) => {
     let dataSource = "Enhanced Analysis";
 
     // Try to generate summary with Gemini AI first
-    const geminiResult = await generateSummaryWithGemini(url, summaryType, websiteContent);
-    if (geminiResult) {
-      result = geminiResult;
-      dataSource = "Gemini AI";
-    } else {
-      // Use enhanced fallback
+    try {
+      const geminiResult = await generateSummaryWithGemini(url, summaryType, websiteContent);
+      if (geminiResult) {
+        result = geminiResult;
+        dataSource = "Gemini AI";
+      }
+    } catch (geminiError) {
+      console.warn("⚠️ Gemini AI generation failed:", geminiError.message);
+      
+      // Check if it's an API key configuration error
+      if (geminiError.message.includes('GEMINI_API_KEY')) {
+        return new Response(
+          JSON.stringify({ 
+            error: "Gemini API key not configured",
+            details: "Please configure your GEMINI_API_KEY in Supabase project settings under Environment Variables. Get your API key from Google AI Studio.",
+            fallback_used: false,
+            timestamp: new Date().toISOString()
+          }),
+          {
+            status: 400,
+            headers: {
+              "Content-Type": "application/json",
+              ...corsHeaders,
+            },
+          }
+        );
+      }
+      
+      // For other errors, use fallback
+      result = generateEnhancedSummary(url, summaryType, websiteContent);
+      dataSource = "Enhanced Website Analysis (Fallback)";
+    }
+
+    // If no result from Gemini, use enhanced fallback
+    if (!result) {
       result = generateEnhancedSummary(url, summaryType, websiteContent);
       dataSource = "Enhanced Website Analysis";
     }
