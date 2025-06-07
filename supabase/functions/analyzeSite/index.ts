@@ -10,19 +10,19 @@ const corsHeaders = {
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-// Try multiple possible environment variable names for DeepSeek
-const deepseekApiKey = Deno.env.get("DEEPSEEK_API_KEY") || 
-                      Deno.env.get("DEEPSEEK_KEY") || 
-                      Deno.env.get("DEEP_SEEK_API_KEY") ||
-                      Deno.env.get("DEEP_SEEK_KEY");
+// Try multiple possible environment variable names for OpenAI
+const openaiApiKey = Deno.env.get("OPENAI_API_KEY") || 
+                     Deno.env.get("OPENAI_KEY") || 
+                     Deno.env.get("OPEN_AI_API_KEY") ||
+                     Deno.env.get("OPEN_AI_KEY");
 
 // Debug environment variables
 console.log("🔧 Environment check:", {
   supabaseUrl: !!supabaseUrl,
   supabaseServiceKey: !!supabaseServiceKey,
-  deepseekApiKey: !!deepseekApiKey,
-  deepseekKeyLength: deepseekApiKey?.length || 0,
-  deepseekKeyPrefix: deepseekApiKey?.substring(0, 15) + "..." || "none"
+  openaiApiKey: !!openaiApiKey,
+  openaiKeyLength: openaiApiKey?.length || 0,
+  openaiKeyPrefix: openaiApiKey?.substring(0, 15) + "..." || "none"
 });
 
 // Validate required environment variables
@@ -30,7 +30,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing required environment variables:", {
     supabaseUrl: !!supabaseUrl,
     supabaseServiceKey: !!supabaseServiceKey,
-    deepseekApiKey: !!deepseekApiKey
+    openaiApiKey: !!openaiApiKey
   });
   throw new Error("Missing required Supabase environment variables");
 }
@@ -132,21 +132,21 @@ AI Readiness Indicators:
   }
 }
 
-// Function to call DeepSeek API
-async function analyzeWithDeepSeek(url: string, websiteContent: string): Promise<any> {
-  if (!deepseekApiKey) {
-    throw new Error("DeepSeek API key not configured");
+// Function to call OpenAI API
+async function analyzeWithOpenAI(url: string, websiteContent: string): Promise<any> {
+  if (!openaiApiKey) {
+    throw new Error("OpenAI API key not configured");
   }
 
-  console.log("🤖 Calling DeepSeek API for analysis...");
+  console.log("🤖 Calling OpenAI API for analysis...");
   console.log(`📊 Content length being analyzed: ${websiteContent.length} characters`);
-  console.log(`🔑 Using API key: ${deepseekApiKey.substring(0, 10)}...${deepseekApiKey.substring(deepseekApiKey.length - 4)}`);
+  console.log(`🔑 Using API key: ${openaiApiKey.substring(0, 10)}...${openaiApiKey.substring(openaiApiKey.length - 4)}`);
   
   try {
-    const analysisId = `DEEPSEEK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const analysisId = `OPENAI-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
     const requestBody = {
-      model: "deepseek-chat",
+      model: "gpt-4o-mini", // Using the latest efficient model
       messages: [
         {
           role: "system",
@@ -184,7 +184,7 @@ Return ONLY a valid JSON response in this exact format:
     "Specific actionable recommendation 2", 
     "Specific actionable recommendation 3"
   ],
-  "data_source": "DeepSeek API Real Analysis"
+  "data_source": "OpenAI GPT-4 Real Analysis"
 }`
         }
       ],
@@ -193,44 +193,44 @@ Return ONLY a valid JSON response in this exact format:
       top_p: 0.9
     };
 
-    console.log("📤 Sending request to DeepSeek API...");
+    console.log("📤 Sending request to OpenAI API...");
     
-    const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${deepseekApiKey}`,
+        "Authorization": `Bearer ${openaiApiKey}`,
         "User-Agent": "SEOgenix/1.0"
       },
       body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(30000) // 30 second timeout
     });
 
-    console.log(`📥 DeepSeek API response status: ${response.status}`);
+    console.log(`📥 OpenAI API response status: ${response.status}`);
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ DeepSeek API error response:", errorText);
-      throw new Error(`DeepSeek API error (${response.status}): ${errorText}`);
+      console.error("❌ OpenAI API error response:", errorText);
+      throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
     }
 
     const data = await response.json();
-    console.log("✅ DeepSeek API response received successfully");
+    console.log("✅ OpenAI API response received successfully");
     console.log(`📊 Response usage:`, data.usage || 'No usage data');
     
     if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      throw new Error("Invalid response structure from DeepSeek API");
+      throw new Error("Invalid response structure from OpenAI API");
     }
     
     const content = data.choices[0].message.content;
-    console.log(`📝 DeepSeek response content length: ${content.length} characters`);
+    console.log(`📝 OpenAI response content length: ${content.length} characters`);
     console.log(`🔍 First 200 chars of response: ${content.substring(0, 200)}...`);
     
     // Try to extract JSON from the response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error("❌ No JSON found in response:", content);
-      throw new Error("No valid JSON found in DeepSeek response");
+      throw new Error("No valid JSON found in OpenAI response");
     }
     
     try {
@@ -244,7 +244,7 @@ Return ONLY a valid JSON response in this exact format:
         }
       }
       
-      console.log("✅ Successfully parsed and validated DeepSeek analysis");
+      console.log("✅ Successfully parsed and validated OpenAI analysis");
       console.log("📊 Scores received:", {
         ai_visibility: parsed.ai_visibility_score,
         schema: parsed.schema_score,
@@ -255,17 +255,17 @@ Return ONLY a valid JSON response in this exact format:
       
       // Log the analysis ID to verify it's real
       if (parsed.analysis_id) {
-        console.log(`🆔 Analysis ID from DeepSeek: ${parsed.analysis_id}`);
+        console.log(`🆔 Analysis ID from OpenAI: ${parsed.analysis_id}`);
       }
       
       return parsed;
     } catch (parseError) {
-      console.error("❌ Failed to parse DeepSeek JSON:", parseError);
+      console.error("❌ Failed to parse OpenAI JSON:", parseError);
       console.error("🔍 Raw content:", content);
-      throw new Error(`Invalid JSON format in DeepSeek response: ${parseError.message}`);
+      throw new Error(`Invalid JSON format in OpenAI response: ${parseError.message}`);
     }
   } catch (error) {
-    console.error("💥 DeepSeek API call failed:", error);
+    console.error("💥 OpenAI API call failed:", error);
     throw error;
   }
 }
@@ -324,7 +324,7 @@ Citation Potential (${scores.citation_score}/100): ${getScoreDescription(scores.
 
 Technical SEO (${scores.technical_seo_score}/100): ${getScoreDescription(scores.technical_seo_score)} - Basic technical factors ${scores.technical_seo_score >= 70 ? 'are well optimized' : 'need attention'}.
 
-⚠️ NOTE: This is enhanced mock data generated because the DeepSeek API key is not configured. The scores are based on domain analysis and realistic patterns, but a real API analysis would provide more accurate results.`;
+⚠️ NOTE: This is enhanced mock data generated because the OpenAI API key is not configured. The scores are based on domain analysis and realistic patterns, but a real API analysis would provide more accurate results.`;
 
   const recommendations = [
     scores.schema_score < 70 ? "Implement comprehensive schema.org structured data markup" : "Enhance existing schema markup with additional entity types",
@@ -407,86 +407,90 @@ Deno.serve(async (req) => {
     }
 
     // COMPREHENSIVE API KEY VALIDATION WITH DETAILED DEBUGGING
-    console.log("🔑 === DEEPSEEK API KEY VALIDATION ===");
-    console.log(`📋 Key Present: ${!!deepseekApiKey}`);
+    console.log("🔑 === OPENAI API KEY VALIDATION ===");
+    console.log(`📋 Key Present: ${!!openaiApiKey}`);
     
-    if (deepseekApiKey) {
-      console.log(`📏 Key Length: ${deepseekApiKey.length} characters`);
-      console.log(`🔤 Key First 20 chars: "${deepseekApiKey.substring(0, 20)}"`);
-      console.log(`🔤 Key Last 10 chars: "...${deepseekApiKey.substring(deepseekApiKey.length - 10)}"`);
-      console.log(`🔍 Key contains spaces: ${deepseekApiKey.includes(' ')}`);
-      console.log(`🔍 Key contains newlines: ${deepseekApiKey.includes('\n')}`);
-      console.log(`🔍 Key is trimmed: ${deepseekApiKey === deepseekApiKey.trim()}`);
-      console.log(`🔍 Key contains 'your-': ${deepseekApiKey.includes('your-')}`);
-      console.log(`🔍 Key contains 'example': ${deepseekApiKey.includes('example')}`);
-      console.log(`🔍 Key contains 'placeholder': ${deepseekApiKey.includes('placeholder')}`);
-      console.log(`🔍 Key contains 'test': ${deepseekApiKey.includes('test')}`);
-      console.log(`🔍 Key contains 'demo': ${deepseekApiKey.includes('demo')}`);
+    if (openaiApiKey) {
+      console.log(`📏 Key Length: ${openaiApiKey.length} characters`);
+      console.log(`🔤 Key First 20 chars: "${openaiApiKey.substring(0, 20)}"`);
+      console.log(`🔤 Key Last 10 chars: "...${openaiApiKey.substring(openaiApiKey.length - 10)}"`);
+      console.log(`🔍 Key contains spaces: ${openaiApiKey.includes(' ')}`);
+      console.log(`🔍 Key contains newlines: ${openaiApiKey.includes('\n')}`);
+      console.log(`🔍 Key is trimmed: ${openaiApiKey === openaiApiKey.trim()}`);
+      console.log(`🔍 Key contains 'your-': ${openaiApiKey.includes('your-')}`);
+      console.log(`🔍 Key contains 'example': ${openaiApiKey.includes('example')}`);
+      console.log(`🔍 Key contains 'placeholder': ${openaiApiKey.includes('placeholder')}`);
+      console.log(`🔍 Key contains 'test': ${openaiApiKey.includes('test')}`);
+      console.log(`🔍 Key contains 'demo': ${openaiApiKey.includes('demo')}`);
+      console.log(`🔍 Key starts with 'sk-': ${openaiApiKey.startsWith('sk-')}`);
     } else {
       console.log("❌ No API key found in any environment variable");
-      console.log("🔍 Checked variables: DEEPSEEK_API_KEY, DEEPSEEK_KEY, DEEP_SEEK_API_KEY, DEEP_SEEK_KEY");
+      console.log("🔍 Checked variables: OPENAI_API_KEY, OPENAI_KEY, OPEN_AI_API_KEY, OPEN_AI_KEY");
     }
     
-    // SIMPLIFIED VALIDATION - Just check if key exists and has reasonable length
-    const hasValidApiKey = deepseekApiKey && 
-                          deepseekApiKey.trim().length >= 10 && 
-                          !deepseekApiKey.includes('your-') &&
-                          !deepseekApiKey.includes('example') &&
-                          !deepseekApiKey.includes('placeholder') &&
-                          !deepseekApiKey.includes('test-key') &&
-                          !deepseekApiKey.includes('demo-key');
+    // SIMPLIFIED VALIDATION - Check for OpenAI key format
+    const hasValidApiKey = openaiApiKey && 
+                          openaiApiKey.trim().length >= 20 && 
+                          openaiApiKey.startsWith('sk-') &&
+                          !openaiApiKey.includes('your-') &&
+                          !openaiApiKey.includes('example') &&
+                          !openaiApiKey.includes('placeholder') &&
+                          !openaiApiKey.includes('test-key') &&
+                          !openaiApiKey.includes('demo-key');
     
     console.log(`✅ Final Validation Result: ${hasValidApiKey}`);
     console.log("🔑 === END VALIDATION ===");
     
     if (!hasValidApiKey) {
       console.log("❌ API Key Validation Failed - Detailed Reasons:");
-      if (!deepseekApiKey) {
+      if (!openaiApiKey) {
         console.log("   ❌ Key is missing entirely");
-      } else if (deepseekApiKey.trim().length < 10) {
-        console.log(`   ❌ Key too short (${deepseekApiKey.trim().length} chars, need 10+)`);
-      } else if (deepseekApiKey.includes('your-')) {
+      } else if (openaiApiKey.trim().length < 20) {
+        console.log(`   ❌ Key too short (${openaiApiKey.trim().length} chars, need 20+)`);
+      } else if (!openaiApiKey.startsWith('sk-')) {
+        console.log("   ❌ Key doesn't start with 'sk-' (OpenAI format)");
+      } else if (openaiApiKey.includes('your-')) {
         console.log("   ❌ Key contains 'your-' (placeholder pattern)");
-      } else if (deepseekApiKey.includes('example')) {
+      } else if (openaiApiKey.includes('example')) {
         console.log("   ❌ Key contains 'example' (placeholder pattern)");
-      } else if (deepseekApiKey.includes('placeholder')) {
+      } else if (openaiApiKey.includes('placeholder')) {
         console.log("   ❌ Key contains 'placeholder'");
-      } else if (deepseekApiKey.includes('test-key')) {
+      } else if (openaiApiKey.includes('test-key')) {
         console.log("   ❌ Key contains 'test-key'");
-      } else if (deepseekApiKey.includes('demo-key')) {
+      } else if (openaiApiKey.includes('demo-key')) {
         console.log("   ❌ Key contains 'demo-key'");
       } else {
         console.log("   ❌ Key failed validation for unknown reason");
       }
     }
 
-    // Try to get real analysis from DeepSeek
+    // Try to get real analysis from OpenAI
     if (hasValidApiKey) {
       try {
-        console.log("🤖 ✅ API KEY VALID - Attempting DeepSeek API analysis...");
-        console.log(`🔑 Using key: ${deepseekApiKey.substring(0, 8)}...${deepseekApiKey.substring(deepseekApiKey.length - 4)}`);
+        console.log("🤖 ✅ API KEY VALID - Attempting OpenAI API analysis...");
+        console.log(`🔑 Using key: ${openaiApiKey.substring(0, 8)}...${openaiApiKey.substring(openaiApiKey.length - 4)}`);
         
-        scores = await analyzeWithDeepSeek(url, websiteContent);
+        scores = await analyzeWithOpenAI(url, websiteContent);
         analysisText = scores.analysis;
         analysisId = scores.analysis_id || "No ID provided";
         usingRealData = true;
-        dataSource = "DeepSeek API";
+        dataSource = "OpenAI GPT-4";
         
-        console.log("🎉 ✅ SUCCESS: Real analysis from DeepSeek API completed!");
+        console.log("🎉 ✅ SUCCESS: Real analysis from OpenAI API completed!");
         console.log(`🆔 Analysis ID: ${analysisId}`);
-        console.log(`📊 Data Source: ${scores.data_source || 'DeepSeek API'}`);
+        console.log(`📊 Data Source: ${scores.data_source || 'OpenAI GPT-4'}`);
       } catch (apiError) {
-        console.error("❌ DeepSeek API failed:", apiError.message);
+        console.error("❌ OpenAI API failed:", apiError.message);
         console.log("🔄 Falling back to enhanced mock analysis...");
         
         scores = getEnhancedMockAnalysis(url, websiteContent);
-        analysisText = scores.analysis + ` (DeepSeek API Error: ${apiError.message})`;
+        analysisText = scores.analysis + ` (OpenAI API Error: ${apiError.message})`;
         analysisId = scores.analysis_id;
         usingRealData = false;
         dataSource = "Enhanced Mock (API Failed)";
       }
     } else {
-      console.log("❌ DeepSeek API key validation failed");
+      console.log("❌ OpenAI API key validation failed");
       console.log("🔄 Using enhanced mock analysis based on website content...");
       
       scores = getEnhancedMockAnalysis(url, websiteContent);
