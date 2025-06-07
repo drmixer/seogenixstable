@@ -32,6 +32,70 @@ interface RequestBody {
   schema_type: string;
 }
 
+// Function to validate Gemini API key
+function validateGeminiApiKey(): boolean {
+  console.log("🔑 === GEMINI API KEY VALIDATION ===");
+  console.log(`📋 Key Present: ${!!geminiApiKey}`);
+  
+  if (geminiApiKey) {
+    console.log(`📏 Key Length: ${geminiApiKey.length} characters`);
+    console.log(`🔤 Key First 20 chars: "${geminiApiKey.substring(0, 20)}"`);
+    console.log(`🔤 Key Last 10 chars: "...${geminiApiKey.substring(geminiApiKey.length - 10)}"`);
+    console.log(`🔍 Key contains spaces: ${geminiApiKey.includes(' ')}`);
+    console.log(`🔍 Key contains newlines: ${geminiApiKey.includes('\n')}`);
+    console.log(`🔍 Key is trimmed: ${geminiApiKey === geminiApiKey.trim()}`);
+    console.log(`🔍 Key contains 'your-': ${geminiApiKey.includes('your-')}`);
+    console.log(`🔍 Key contains 'example': ${geminiApiKey.includes('example')}`);
+    console.log(`🔍 Key contains 'placeholder': ${geminiApiKey.includes('placeholder')}`);
+    console.log(`🔍 Key contains 'test': ${geminiApiKey.includes('test')}`);
+    console.log(`🔍 Key contains 'demo': ${geminiApiKey.includes('demo')}`);
+    console.log(`🔍 Key starts with 'AIza': ${geminiApiKey.startsWith('AIza')}`);
+  } else {
+    console.log("❌ No API key found in GEMINI_API_KEY environment variable");
+  }
+  
+  // UPDATED VALIDATION - For Gemini API keys
+  const hasValidApiKey = geminiApiKey && 
+                        geminiApiKey.trim().length >= 35 && // Gemini keys are typically 39 chars
+                        geminiApiKey.startsWith('AIza') &&
+                        !geminiApiKey.includes('your-') &&
+                        !geminiApiKey.includes('example') &&
+                        !geminiApiKey.includes('placeholder') &&
+                        !geminiApiKey.includes('test-key') &&
+                        !geminiApiKey.includes('demo-key') &&
+                        geminiApiKey === geminiApiKey.trim(); // No extra whitespace
+  
+  console.log(`✅ Final Validation Result: ${hasValidApiKey}`);
+  
+  if (!hasValidApiKey) {
+    console.log("❌ === API KEY VALIDATION FAILED ===");
+    if (!geminiApiKey) {
+      console.log("   ❌ Key is missing entirely");
+    } else if (geminiApiKey.trim().length < 35) {
+      console.log(`   ❌ Key too short (${geminiApiKey.trim().length} chars, need 35+)`);
+    } else if (!geminiApiKey.startsWith('AIza')) {
+      console.log("   ❌ Key doesn't start with 'AIza' (Gemini API key format)");
+    } else if (geminiApiKey.includes('your-')) {
+      console.log("   ❌ Key contains 'your-' (placeholder pattern)");
+    } else if (geminiApiKey.includes('example')) {
+      console.log("   ❌ Key contains 'example' (placeholder pattern)");
+    } else if (geminiApiKey.includes('placeholder')) {
+      console.log("   ❌ Key contains 'placeholder'");
+    } else if (geminiApiKey.includes('test-key')) {
+      console.log("   ❌ Key contains 'test-key'");
+    } else if (geminiApiKey.includes('demo-key')) {
+      console.log("   ❌ Key contains 'demo-key'");
+    } else if (geminiApiKey !== geminiApiKey.trim()) {
+      console.log("   ❌ Key has extra whitespace");
+    } else {
+      console.log("   ❌ Key failed validation for unknown reason");
+    }
+  }
+  console.log("🔑 === END VALIDATION ===");
+  
+  return hasValidApiKey;
+}
+
 // Function to fetch and analyze website content
 async function fetchWebsiteContent(url: string): Promise<string> {
   try {
@@ -68,8 +132,8 @@ async function fetchWebsiteContent(url: string): Promise<string> {
 
 // Function to call Gemini API for enhanced schema generation
 async function generateSchemaWithGemini(url: string, schemaType: string, websiteContent: string): Promise<any> {
-  if (!geminiApiKey || geminiApiKey.includes('your-') || geminiApiKey.length < 35) {
-    console.log("⚠️ Gemini API key not configured, using enhanced fallback");
+  if (!validateGeminiApiKey()) {
+    console.log("⚠️ Gemini API key validation failed, using enhanced fallback");
     return null;
   }
 
