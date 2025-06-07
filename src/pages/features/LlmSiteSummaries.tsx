@@ -36,16 +36,10 @@ const LlmSiteSummaries = () => {
       icon: <FileBarChart size={16} />
     },
     { 
-      value: 'PageSummary', 
-      label: 'Page Summary', 
-      description: 'Detailed summary of main page content and purpose',
+      value: 'CompanyProfile', 
+      label: 'Company Profile', 
+      description: 'Professional company overview and background',
       icon: <Target size={16} />
-    },
-    { 
-      value: 'ProductCatalog', 
-      label: 'Product Catalog', 
-      description: 'Structured summary of products and services offered',
-      icon: <TrendingUp size={16} />
     },
     { 
       value: 'ServiceOfferings', 
@@ -54,15 +48,21 @@ const LlmSiteSummaries = () => {
       icon: <Lightbulb size={16} />
     },
     { 
+      value: 'ProductCatalog', 
+      label: 'Product Catalog', 
+      description: 'Structured summary of products and services offered',
+      icon: <TrendingUp size={16} />
+    },
+    { 
       value: 'AIReadiness', 
       label: 'AI Readiness Report', 
       description: 'Assessment of website optimization for AI systems',
       icon: <FileBarChart size={16} />
     },
     { 
-      value: 'CompanyProfile', 
-      label: 'Company Profile', 
-      description: 'Professional company overview and background',
+      value: 'PageSummary', 
+      label: 'Page Summary', 
+      description: 'Detailed summary of main page content and purpose',
       icon: <Target size={16} />
     },
     { 
@@ -135,7 +135,7 @@ const LlmSiteSummaries = () => {
       setSummaryType('');
     } catch (error) {
       console.error('Error generating summary:', error);
-      toast.error('Failed to generate summary');
+      toast.error('Failed to generate summary. Please try again.');
     } finally {
       setIsGenerating(false);
     }
@@ -235,7 +235,7 @@ const LlmSiteSummaries = () => {
                     className="w-full"
                     onClick={handleGenerateSummary}
                     isLoading={isGenerating}
-                    disabled={!selectedSite}
+                    disabled={!selectedSite || !summaryType}
                     icon={<RefreshCw size={16} className={isGenerating ? 'animate-spin' : ''} />}
                   >
                     {isGenerating ? 'Generating Summary...' : 'Generate Summary'}
@@ -375,7 +375,7 @@ const LlmSiteSummaries = () => {
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No Summaries Generated Yet</h3>
                   <p className="text-gray-500 max-w-md mx-auto mb-6">
                     {selectedSite 
-                      ? `Generate your first LLM-optimized summary for ${selectedSite.name}. Choose a summary type and let AI create comprehensive, citation-worthy content.`
+                      ? `Generate your first LLM-optimized summary for ${selectedSite.name}. Choose a summary type and let our AI create comprehensive, citation-worthy content.`
                       : 'Select a site and generate LLM-optimized summaries that help AI systems understand your content better.'
                     }
                   </p>

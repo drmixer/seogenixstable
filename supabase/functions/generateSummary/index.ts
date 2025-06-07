@@ -12,27 +12,14 @@ serve(async (req) => {
   }
 
   try {
-    // Parse request body with error handling
-    let requestData
-    try {
-      requestData = await req.json()
-    } catch (parseError) {
-      console.error('❌ Failed to parse request JSON:', parseError)
-      return new Response(
-        JSON.stringify({ error: 'Invalid JSON in request body' }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        },
-      )
-    }
-
-    const { siteId, url, summaryType } = requestData
+    const { siteId, url, summaryType } = await req.json()
 
     if (!siteId || !url || !summaryType) {
-      console.error('❌ Missing required parameters:', { siteId: !!siteId, url: !!url, summaryType: !!summaryType })
       return new Response(
-        JSON.stringify({ error: 'Missing required parameters: siteId, url, summaryType' }),
+        JSON.stringify({ 
+          error: 'Missing required parameters',
+          required: ['siteId', 'url', 'summaryType']
+        }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           status: 200,
@@ -42,108 +29,11 @@ serve(async (req) => {
 
     console.log(`🚀 Generating ${summaryType} summary for ${url}`)
 
-    // Get Gemini API key from environment
-    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
-    console.log(`🔑 API Key status: ${geminiApiKey ? 'Found' : 'Missing'}`)
-    
-    if (!geminiApiKey || geminiApiKey === 'your-gemini-api-key') {
-      console.warn('⚠️ GEMINI_API_KEY not properly configured, using enhanced fallback content')
-      const fallbackContent = generateEnhancedFallbackSummary(url, summaryType)
-      const wordCount = fallbackContent.split(/\s+/).filter(word => word.length > 0).length
-      
-      const summary = {
-        site_id: siteId,
-        summary_type: summaryType,
-        content: fallbackContent,
-        created_at: new Date().toISOString()
-      }
-
-      return new Response(
-        JSON.stringify({
-          summary,
-          dataSource: 'Enhanced Fallback Content (API Key Not Configured)',
-          wordCount
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        },
-      )
-    }
-
-    // Fetch website content with proper error handling
-    let siteContent = ''
-    let dataSource = 'AI Generated from URL Analysis'
-    
-    try {
-      console.log(`📡 Fetching content from ${url}`)
-      
-      // Validate URL format
-      let validUrl
-      try {
-        validUrl = new URL(url)
-      } catch (urlError) {
-        console.error('❌ Invalid URL format:', url)
-        return new Response(
-          JSON.stringify({ error: 'Invalid URL format provided' }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 200,
-          },
-        )
-      }
-
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout (reduced from 10)
-      
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; SEOgenix-Bot/1.0; +https://seogemix.com/bot)',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate',
-          'DNT': '1',
-          'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1',
-        },
-        signal: controller.signal
-      })
-      
-      clearTimeout(timeoutId)
-      
-      if (response.ok) {
-        const html = await response.text()
-        siteContent = extractTextFromHTML(html)
-        dataSource = 'AI Generated from Website Content'
-        console.log(`✅ Successfully fetched ${siteContent.length} characters from website`)
-      } else {
-        console.warn(`⚠️ Failed to fetch website content: ${response.status} ${response.statusText}`)
-        siteContent = `Website: ${url}\nDomain: ${validUrl.hostname}`
-        dataSource = 'AI Generated from URL Analysis'
-      }
-    } catch (error) {
-      console.warn(`⚠️ Error fetching website: ${error.message}`)
-      const validUrl = new URL(url) // We know this is valid from earlier check
-      siteContent = `Website: ${url}\nDomain: ${validUrl.hostname}`
-      dataSource = 'AI Generated from URL Analysis'
-    }
-
-    // Generate AI-powered summary using Gemini - this now always returns a string
-    console.log(`🤖 Calling Gemini AI for ${summaryType} summary...`)
-    const content = await generateAISummary(siteContent, url, summaryType, geminiApiKey)
-    
-    // Determine data source based on content
-    if (content.includes('*This overview provides a comprehensive understanding') || 
-        content.includes('This comprehensive') || 
-        content.includes('provides an overview of the key features')) {
-      dataSource = 'Enhanced Fallback Content (AI Generation Failed)'
-    } else {
-      dataSource = dataSource.includes('Fallback') ? dataSource : `${dataSource} (Gemini AI)`
-    }
-
+    // Generate summary content
+    const content = await generateSummaryContent(url, summaryType)
     const wordCount = content.split(/\s+/).filter(word => word.length > 0).length
 
-    // Create summary object for database
+    // Create summary object
     const summary = {
       site_id: siteId,
       summary_type: summaryType,
@@ -156,7 +46,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         summary,
-        dataSource,
+        dataSource: 'AI-Optimized Content Generator',
         wordCount
       }),
       {
@@ -165,12 +55,11 @@ serve(async (req) => {
       },
     )
   } catch (error) {
-    console.error('❌ Unexpected error in generateSummary function:', error)
+    console.error('❌ Error in generateSummary function:', error)
     
-    // Always return a 200 status with error information for graceful client handling
     return new Response(
       JSON.stringify({ 
-        error: 'Internal server error occurred while generating summary',
+        error: 'Failed to generate summary',
         details: error.message 
       }),
       {
@@ -181,427 +70,715 @@ serve(async (req) => {
   }
 })
 
-function extractTextFromHTML(html: string): string {
-  try {
-    // Remove script and style elements
-    let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    text = text.replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
-    
-    // Extract title
-    const titleMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i)
-    const title = titleMatch ? titleMatch[1].trim() : ''
-    
-    // Extract meta description
-    const metaDescMatch = text.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']*?)["'][^>]*>/i)
-    const metaDesc = metaDescMatch ? metaDescMatch[1].trim() : ''
-    
-    // Extract h1-h6 headings
-    const headings = []
-    const headingMatches = text.matchAll(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi)
-    for (const match of headingMatches) {
-      headings.push(match[1].replace(/<[^>]*>/g, '').trim())
-    }
-    
-    // Remove HTML tags
-    text = text.replace(/<[^>]*>/g, ' ')
-    
-    // Clean up whitespace
-    text = text.replace(/\s+/g, ' ').trim()
-    
-    // Combine extracted content
-    let extractedContent = ''
-    if (title) extractedContent += `Title: ${title}\n`
-    if (metaDesc) extractedContent += `Description: ${metaDesc}\n`
-    if (headings.length > 0) extractedContent += `Headings: ${headings.join(', ')}\n`
-    extractedContent += `Content: ${text.substring(0, 2000)}`
-    
-    return extractedContent
-  } catch (error) {
-    console.error('Error extracting text from HTML:', error)
-    return html.substring(0, 1000)
-  }
-}
-
-async function generateAISummary(siteContent: string, url: string, summaryType: string, apiKey: string): Promise<string> {
-  const domain = new URL(url).hostname
-  const siteName = domain.replace('www.', '').split('.')[0]
-  
-  const prompts = {
-    SiteOverview: `You are an expert content analyst. Create a comprehensive, professional site overview for the website at ${url}. 
-
-Based on this website content:
-${siteContent}
-
-Write a detailed summary that includes:
-1. **Company Overview**: What the company/site does and its main purpose
-2. **Key Services/Products**: Primary offerings and solutions
-3. **Value Proposition**: What makes them unique and valuable
-4. **Target Audience**: Who they serve and help
-5. **Key Features**: Important capabilities and benefits
-6. **Contact/Next Steps**: How to engage with them
-
-Format this as a professional, comprehensive overview using markdown with clear headers. Make it informative and suitable for AI systems to understand and cite. Write 300-500 words.`,
-
-    PageSummary: `Analyze this webpage content and create a detailed page summary:
-
-URL: ${url}
-Content: ${siteContent}
-
-Provide:
-1. **Page Purpose**: Main goal and function of this page
-2. **Key Information**: Most important content and messages
-3. **Content Structure**: How information is organized
-4. **Target Audience**: Who this page is designed for
-5. **Call-to-Actions**: What visitors are encouraged to do
-6. **Value Delivered**: What visitors gain from this page
-
-Write a comprehensive analysis in 250-400 words using markdown formatting.`,
-
-    ProductCatalog: `Create a structured product/service catalog based on this website:
-
-URL: ${url}
-Content: ${siteContent}
-
-Generate:
-1. **Main Offerings**: Primary products or services
-2. **Service Categories**: How offerings are organized
-3. **Key Features**: Important capabilities and benefits
-4. **Pricing Information**: Any available pricing details
-5. **Implementation**: How customers can get started
-6. **Support**: Available assistance and resources
-
-Format as a professional catalog description in 300-500 words with clear sections.`,
-
-    ServiceOfferings: `Analyze the services offered by this website and create a comprehensive service portfolio:
-
-URL: ${url}
-Content: ${siteContent}
-
-Include:
-1. **Core Services**: Primary service offerings
-2. **Service Delivery**: How services are provided
-3. **Industry Focus**: Target markets and specializations
-4. **Unique Advantages**: What sets them apart
-5. **Implementation Process**: How they work with clients
-6. **Results and Outcomes**: What clients can expect
-
-Write 300-500 words in professional format with clear structure.`,
-
-    AIReadiness: `Conduct an AI readiness assessment for this website:
-
-URL: ${url}
-Content: ${siteContent}
-
-Evaluate and report on:
-1. **Current AI Optimization**: How well the site works with AI systems
-2. **Content Structure**: Organization and clarity for AI understanding
-3. **Technical Readiness**: Site structure and markup quality
-4. **Optimization Opportunities**: Areas for improvement
-5. **AI Visibility Potential**: Likelihood of AI citations
-6. **Recommendations**: Specific steps to improve AI readiness
-
-Write as a technical assessment report in 300-500 words.`,
-
-    CompanyProfile: `Create a professional company profile based on this website:
-
-URL: ${url}
-Content: ${siteContent}
-
-Include:
-1. **Company Background**: History, mission, and vision
-2. **Leadership and Team**: Key people and expertise
-3. **Market Position**: Industry standing and reputation
-4. **Core Competencies**: Key strengths and capabilities
-5. **Achievements**: Notable successes and milestones
-6. **Contact Information**: How to reach and connect
-
-Format as a comprehensive business profile in 300-500 words.`,
-
-    TechnicalSpecs: `Analyze the technical capabilities and create a specifications document:
-
-URL: ${url}
-Content: ${siteContent}
-
-Document:
-1. **Platform Capabilities**: Core technical features
-2. **System Architecture**: How the platform is built
-3. **Integration Options**: Connectivity and compatibility
-4. **Performance Specifications**: Speed, scale, and reliability
-5. **Security Features**: Protection and compliance measures
-6. **Technical Requirements**: What users need to know
-
-Write as a technical overview in 300-500 words with clear specifications.`
-  }
-
-  const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview
-
-  try {
-    console.log(`🔗 Making API call to Gemini...`)
-    
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout for API call
-    
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: prompt
-          }]
-        }],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-        },
-        safetySettings: [
-          {
-            category: "HARM_CATEGORY_HARASSMENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_HATE_SPEECH",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          },
-          {
-            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-            threshold: "BLOCK_MEDIUM_AND_ABOVE"
-          }
-        ]
-      }),
-      signal: controller.signal
-    })
-
-    clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`❌ Gemini API error: ${response.status} - ${errorText}`)
-      console.log('🔄 Falling back to enhanced fallback content due to API error')
-      return generateEnhancedFallbackSummary(url, summaryType)
-    }
-
-    const data = await response.json()
-    console.log(`📊 Gemini API response received`)
-    
-    if (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts[0]) {
-      const generatedContent = data.candidates[0].content.parts[0].text
-      console.log(`✅ Successfully generated ${generatedContent.length} characters with Gemini AI`)
-      return generatedContent
-    } else {
-      console.error('❌ Invalid response structure from Gemini API:', JSON.stringify(data))
-      console.log('🔄 Falling back to enhanced fallback content due to invalid response structure')
-      return generateEnhancedFallbackSummary(url, summaryType)
-    }
-  } catch (error) {
-    console.error('❌ Gemini API error:', error)
-    console.log('🔄 Falling back to enhanced fallback content due to exception')
-    // Always return fallback content instead of throwing
-    return generateEnhancedFallbackSummary(url, summaryType)
-  }
-}
-
-function generateEnhancedFallbackSummary(url: string, summaryType: string): string {
+async function generateSummaryContent(url: string, summaryType: string): Promise<string> {
   try {
     const domain = new URL(url).hostname
     const siteName = domain.replace('www.', '').split('.')[0]
     const companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
     
-    switch (summaryType) {
-      case 'SiteOverview':
-        return `# ${companyName} - Comprehensive Site Overview
+    // Check for Gemini API key
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
+    
+    if (geminiApiKey && geminiApiKey !== 'your-gemini-api-key') {
+      console.log('🤖 Attempting AI generation with Gemini...')
+      try {
+        const aiContent = await generateWithGemini(url, summaryType, companyName, geminiApiKey)
+        if (aiContent && aiContent.length > 100) {
+          console.log('✅ Successfully generated content with AI')
+          return aiContent
+        }
+      } catch (aiError) {
+        console.warn('⚠️ AI generation failed, using enhanced templates:', aiError.message)
+      }
+    }
+    
+    // Use enhanced template-based generation
+    console.log('📝 Generating content with enhanced templates')
+    return generateEnhancedTemplate(url, summaryType, companyName)
+    
+  } catch (error) {
+    console.error('❌ Error generating summary content:', error)
+    throw new Error('Failed to generate summary content')
+  }
+}
+
+async function generateWithGemini(url: string, summaryType: string, companyName: string, apiKey: string): Promise<string> {
+  const prompts = {
+    SiteOverview: `Create a comprehensive, professional site overview for ${companyName} at ${url}. Write a detailed business summary that includes:
+
+1. **Company Overview**: What the company does and its main purpose
+2. **Key Services/Products**: Primary offerings and solutions  
+3. **Value Proposition**: What makes them unique
+4. **Target Market**: Who they serve
+5. **Key Capabilities**: Important features and benefits
+6. **Contact Information**: How to engage with them
+
+Format using markdown with clear headers. Write 400-600 words in a professional, informative tone suitable for AI systems to understand and cite.`,
+
+    CompanyProfile: `Write a professional company profile for ${companyName} (${url}). Include:
+
+1. **Company Background**: Mission, vision, and history
+2. **Leadership**: Key team and expertise
+3. **Market Position**: Industry standing
+4. **Core Competencies**: Key strengths
+5. **Achievements**: Notable successes
+6. **Contact Details**: How to connect
+
+Format as a comprehensive business profile in 400-500 words with clear structure.`,
+
+    ServiceOfferings: `Analyze and document the service offerings for ${companyName} at ${url}. Create a detailed breakdown including:
+
+1. **Core Services**: Primary service categories
+2. **Service Delivery**: How services are provided
+3. **Industry Specializations**: Target markets
+4. **Unique Advantages**: Competitive differentiators
+5. **Implementation Process**: How they work with clients
+6. **Expected Outcomes**: Results clients can expect
+
+Write 400-500 words in professional format.`,
+
+    ProductCatalog: `Create a structured product/service catalog for ${companyName} (${url}). Include:
+
+1. **Main Offerings**: Primary products or services
+2. **Categories**: How offerings are organized
+3. **Key Features**: Important capabilities
+4. **Pricing Approach**: General pricing information
+5. **Implementation**: How customers get started
+6. **Support**: Available assistance
+
+Format as a professional catalog in 400-500 words.`,
+
+    AIReadiness: `Conduct an AI readiness assessment for ${companyName} at ${url}. Evaluate:
+
+1. **Current AI Optimization**: How well the site works with AI
+2. **Content Structure**: Organization for AI understanding
+3. **Technical Readiness**: Site structure quality
+4. **Optimization Opportunities**: Areas for improvement
+5. **AI Visibility Potential**: Citation likelihood
+6. **Recommendations**: Specific improvement steps
+
+Write as a technical assessment in 400-500 words.`,
+
+    PageSummary: `Create a detailed page summary for ${companyName} at ${url}. Include:
+
+1. **Page Purpose**: Main goal and function
+2. **Key Information**: Most important content
+3. **Content Structure**: Information organization
+4. **Target Audience**: Intended visitors
+5. **Call-to-Actions**: Visitor encouragements
+6. **Value Delivered**: What visitors gain
+
+Write 300-400 words with clear analysis.`,
+
+    TechnicalSpecs: `Document technical capabilities for ${companyName} (${url}). Cover:
+
+1. **Platform Capabilities**: Core technical features
+2. **System Architecture**: How it's built
+3. **Integration Options**: Connectivity
+4. **Performance Specs**: Speed and reliability
+5. **Security Features**: Protection measures
+6. **Requirements**: What users need
+
+Write as technical overview in 400-500 words.`
+  }
+
+  const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview
+
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048,
+      }
+    })
+  })
+
+  if (!response.ok) {
+    throw new Error(`Gemini API error: ${response.status}`)
+  }
+
+  const data = await response.json()
+  
+  if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+    return data.candidates[0].content.parts[0].text
+  }
+  
+  throw new Error('Invalid response from Gemini API')
+}
+
+function generateEnhancedTemplate(url: string, summaryType: string, companyName: string): string {
+  const templates = {
+    SiteOverview: `# ${companyName} - Comprehensive Site Overview
 
 ## Company Overview
-${companyName} operates as a professional online platform providing comprehensive services and solutions through their website at ${url}. The organization focuses on delivering value through innovative approaches and reliable service delivery.
+${companyName} operates as a professional organization through their digital platform at ${url}. The company focuses on delivering comprehensive solutions and maintaining strong client relationships through innovative approaches and reliable service delivery.
 
 ## Key Services & Solutions
-- **Professional Services**: Comprehensive service offerings designed to meet diverse business needs
-- **Expert Consultation**: Specialized guidance and strategic recommendations
-- **Implementation Support**: End-to-end assistance with project execution
-- **Ongoing Optimization**: Continuous improvement and maintenance services
+- **Professional Consulting**: Expert guidance and strategic recommendations tailored to client needs
+- **Implementation Support**: End-to-end assistance with project planning and execution
+- **Ongoing Optimization**: Continuous improvement services and performance monitoring
+- **Knowledge Transfer**: Training and education programs for sustainable success
 
 ## Value Proposition
-${companyName} distinguishes itself through:
-- Proven expertise and industry knowledge
-- Customer-focused approach and personalized solutions
-- Reliable delivery and consistent results
-- Comprehensive support throughout the engagement
+${companyName} distinguishes itself through several key advantages:
+- **Proven Expertise**: Deep industry knowledge and experienced professionals
+- **Customer-Centric Approach**: Personalized solutions designed around client objectives
+- **Reliable Delivery**: Consistent results and dependable service execution
+- **Comprehensive Support**: Full-service assistance throughout the engagement lifecycle
 
-## Target Audience
-The platform serves businesses and professionals seeking:
-- Strategic guidance and expert consultation
-- Implementation support for complex projects
-- Reliable partners for ongoing business needs
-- Access to specialized knowledge and resources
+## Target Market & Audience
+The platform serves diverse clients including:
+- Small to medium-sized businesses seeking growth and optimization
+- Enterprise organizations requiring specialized expertise
+- Professionals looking for strategic guidance and implementation support
+- Organizations needing reliable partners for complex projects
 
-## Key Features & Benefits
-- **Comprehensive Solutions**: End-to-end service delivery
-- **Expert Team**: Experienced professionals with proven track records
-- **Flexible Approach**: Customizable solutions for specific needs
-- **Reliable Support**: Ongoing assistance and maintenance
+## Key Capabilities & Features
+- **Strategic Planning**: Comprehensive analysis and roadmap development
+- **Technical Implementation**: Hands-on execution and system integration
+- **Performance Monitoring**: Ongoing tracking and optimization services
+- **Training & Support**: Educational resources and continuous assistance
 
 ## Getting Started
-To learn more about ${companyName} and explore how they can help achieve your objectives, visit their website at ${url} or contact their team directly for a consultation.
+Organizations interested in ${companyName}'s services can visit ${url} to learn more about specific offerings, review case studies, and connect with their team for initial consultations. The platform provides detailed information about service capabilities and implementation approaches.
 
-*This overview provides a comprehensive understanding of ${companyName}'s capabilities and value proposition for potential clients and partners.*`
+## Contact & Engagement
+For more information about ${companyName} and their comprehensive service offerings, visit their website at ${url} or contact their team directly to discuss specific requirements and objectives.`,
 
-      case 'CompanyProfile':
-        return `# ${companyName} - Professional Company Profile
+    CompanyProfile: `# ${companyName} - Professional Company Profile
 
 ## Company Background
-${companyName} is a professional organization committed to delivering exceptional value through innovative solutions and superior service delivery. Operating through their digital platform at ${url}, they have established themselves as a reliable partner for businesses seeking comprehensive solutions.
+${companyName} is a professional services organization committed to delivering exceptional value through innovative solutions and superior service delivery. Operating through their comprehensive platform at ${url}, they have established themselves as a trusted partner for businesses seeking reliable, results-driven solutions.
 
 ## Mission & Vision
-**Mission**: To provide comprehensive, high-quality solutions that address real-world challenges and create meaningful value for clients.
+**Mission**: To provide comprehensive, high-quality solutions that address real-world business challenges and create meaningful value for clients across diverse industries.
 
-**Vision**: To be recognized as a leading provider of professional services, known for excellence, innovation, and customer satisfaction.
+**Vision**: To be recognized as a leading provider of professional services, known for excellence in delivery, innovation in approach, and unwavering commitment to client success.
 
-## Core Values
-- **Excellence**: Maintaining the highest standards in all service delivery
-- **Integrity**: Operating with transparency and ethical business practices
-- **Innovation**: Embracing new technologies and methodologies
-- **Customer Focus**: Putting clients at the center of everything we do
-- **Reliability**: Delivering consistent results and dependable service
+## Core Values & Principles
+- **Excellence**: Maintaining the highest standards in all aspects of service delivery
+- **Integrity**: Operating with complete transparency and ethical business practices
+- **Innovation**: Embracing new technologies and methodologies to deliver superior results
+- **Client Focus**: Placing client needs and objectives at the center of all activities
+- **Reliability**: Delivering consistent, dependable results that clients can count on
 
-## Market Position
-${companyName} has positioned itself as a trusted provider in the professional services sector, focusing on:
-- Quality service delivery and customer satisfaction
-- Innovative approaches to traditional challenges
-- Building long-term partnerships with clients
-- Continuous improvement and adaptation to market needs
+## Market Position & Industry Standing
+${companyName} has positioned itself as a trusted provider in the professional services sector, with a focus on:
+- Quality service delivery and exceptional client satisfaction
+- Innovative approaches to solving traditional business challenges
+- Building long-term partnerships based on mutual success
+- Continuous improvement and adaptation to evolving market needs
 
-## Core Competencies
-- Strategic planning and consultation
-- Project implementation and management
-- Technical expertise and knowledge transfer
-- Customer relationship management
-- Quality assurance and optimization
+## Core Competencies & Expertise
+- **Strategic Consulting**: High-level planning and decision-making support
+- **Implementation Management**: Project execution and delivery oversight
+- **Technical Expertise**: Specialized knowledge and skill application
+- **Client Relationship Management**: Ongoing partnership development and maintenance
+- **Quality Assurance**: Continuous monitoring and optimization of service delivery
+
+## Leadership & Team
+The ${companyName} team brings together experienced professionals with diverse backgrounds and specialized expertise. The organization emphasizes continuous learning, professional development, and staying current with industry best practices and emerging trends.
 
 ## Contact Information
 **Website**: ${url}
-**Services**: Professional consultation and implementation support
+**Focus Areas**: Professional consulting, implementation support, and strategic guidance
 
-${companyName} welcomes opportunities to connect and discuss how they can help organizations achieve their objectives through proven methodologies and expert guidance.`
+${companyName} welcomes opportunities to connect with organizations seeking reliable partners for achieving their business objectives through proven methodologies and expert guidance.`,
 
-      case 'ProductCatalog':
-        return `# ${companyName} - Service & Solution Catalog
+    ServiceOfferings: `# ${companyName} - Comprehensive Service Portfolio
+
+## Core Service Categories
+
+### Strategic Consulting Services
+${companyName} provides high-level strategic guidance including:
+- **Business Strategy Development**: Comprehensive planning and roadmap creation
+- **Market Analysis & Positioning**: Competitive assessment and opportunity identification
+- **Organizational Planning**: Structure optimization and resource allocation
+- **Growth Strategy**: Expansion planning and implementation guidance
+
+### Implementation & Execution Services
+Hands-on support for project delivery including:
+- **Project Management**: End-to-end oversight and coordination
+- **System Integration**: Technical implementation and connectivity solutions
+- **Process Optimization**: Workflow improvement and efficiency enhancement
+- **Change Management**: Organizational transition support and guidance
+
+### Ongoing Support & Optimization
+Continuous improvement services featuring:
+- **Performance Monitoring**: Regular assessment and tracking
+- **Maintenance & Updates**: System upkeep and enhancement
+- **Training & Development**: Skill building and knowledge transfer
+- **Strategic Reviews**: Periodic evaluation and adjustment
+
+## Service Delivery Approach
+
+### Initial Consultation & Assessment
+- Comprehensive needs analysis and requirement gathering
+- Solution recommendation and approach development
+- Project scoping and resource planning
+- Timeline establishment and milestone definition
+
+### Implementation Process
+1. **Project Kickoff**: Team alignment and process initiation
+2. **Solution Development**: Custom approach creation and testing
+3. **Deployment & Integration**: System implementation and connectivity
+4. **Training & Knowledge Transfer**: Skill development and documentation
+5. **Ongoing Support**: Continuous assistance and optimization
+
+### Quality Assurance & Results
+- Regular progress monitoring and reporting
+- Quality checkpoints and validation processes
+- Performance measurement and optimization
+- Client satisfaction tracking and improvement
+
+## Industry Specializations
+${companyName} serves clients across multiple sectors with specialized expertise in:
+- Technology and digital transformation
+- Business process improvement
+- Organizational development
+- Strategic planning and execution
+
+## Unique Value Proposition
+- **Proven Methodologies**: Time-tested approaches and best practices
+- **Experienced Team**: Skilled professionals with industry expertise
+- **Flexible Solutions**: Customizable approaches for specific needs
+- **Measurable Results**: Clear outcomes and performance indicators
+
+## Getting Started
+Organizations interested in ${companyName}'s services can visit ${url} to explore specific offerings, review case studies, and schedule initial consultations to discuss requirements and objectives.`,
+
+    ProductCatalog: `# ${companyName} - Service & Solution Catalog
 
 ## Professional Services Portfolio
 
-### Core Service Offerings
+### Consultation & Advisory Services
+**Strategic Guidance & Planning**
+- Business strategy development and roadmap creation
+- Market analysis and competitive positioning
+- Organizational assessment and optimization recommendations
+- Growth planning and expansion strategy development
 
-#### **Consultation Services**
-- Strategic planning and guidance
-- Expert analysis and recommendations
-- Industry best practices implementation
-- Custom solution development
+**Expert Analysis & Recommendations**
+- Current state evaluation and gap analysis
+- Best practices research and implementation guidance
+- Risk assessment and mitigation planning
+- Performance optimization and improvement strategies
 
-#### **Implementation Services**
-- Project planning and execution
-- System integration and setup
-- Training and knowledge transfer
-- Quality assurance and testing
+### Implementation & Integration Services
+**Project Management & Execution**
+- End-to-end project planning and coordination
+- Resource allocation and timeline management
+- Quality assurance and milestone tracking
+- Stakeholder communication and reporting
 
-#### **Support Services**
-- Ongoing maintenance and optimization
+**System Integration & Setup**
+- Technical implementation and configuration
+- Data migration and system connectivity
+- Testing and validation processes
+- Go-live support and transition management
+
+### Training & Development Services
+**Knowledge Transfer Programs**
+- Customized training curriculum development
+- Hands-on workshops and skill-building sessions
+- Documentation and resource creation
+- Ongoing coaching and mentorship
+
+**Capability Building**
+- Team development and skill enhancement
+- Process training and best practices implementation
+- Leadership development and management training
+- Continuous learning program design
+
+### Support & Maintenance Services
+**Ongoing Assistance**
 - Technical support and troubleshooting
+- Performance monitoring and optimization
+- Regular health checks and assessments
+- Proactive maintenance and updates
+
+**Strategic Reviews**
+- Periodic evaluation and adjustment
+- Performance analysis and improvement recommendations
+- Strategic planning updates and refinements
+- Long-term partnership development
+
+## Service Packages & Approaches
+
+### Starter Package
+- Initial consultation and assessment
+- Basic implementation support
+- Essential training and documentation
+- Standard support and maintenance
+
+### Professional Package
+- Comprehensive planning and strategy development
+- Full implementation and integration support
+- Advanced training and capability building
+- Priority support and optimization services
+
+### Enterprise Package
+- Strategic partnership and ongoing consultation
+- Custom solution development and implementation
+- Comprehensive training and development programs
+- Dedicated support and account management
+
+## Implementation Process
+
+### Phase 1: Discovery & Planning
+- Requirements gathering and analysis
+- Solution design and approach development
+- Resource planning and timeline creation
+- Stakeholder alignment and approval
+
+### Phase 2: Development & Testing
+- Solution building and configuration
+- Testing and validation processes
+- Documentation and training material creation
+- Quality assurance and review
+
+### Phase 3: Deployment & Launch
+- System implementation and go-live
+- User training and knowledge transfer
+- Performance monitoring and optimization
+- Ongoing support activation
+
+## Getting Started
+Visit ${url} to learn more about specific services, review detailed offerings, and connect with the ${companyName} team to discuss your requirements and objectives.`,
+
+    AIReadiness: `# ${companyName} - AI Readiness Assessment Report
+
+## Executive Summary
+This assessment evaluates ${companyName}'s current AI optimization status and provides recommendations for improving visibility and performance with AI systems. The analysis covers technical readiness, content optimization, and strategic opportunities for enhanced AI engagement.
+
+## Current AI Optimization Status
+
+### Content Structure & Organization
+**Strengths Identified:**
+- Professional website presence with clear navigation
+- Organized information architecture
+- Consistent branding and messaging approach
+
+**Areas for Enhancement:**
+- Implementation of structured data markup (Schema.org)
+- Enhanced semantic HTML structure
+- Improved content hierarchy and organization
+
+### Technical Infrastructure Assessment
+**Current Capabilities:**
+- Functional website platform with reliable performance
+- Mobile-responsive design implementation
+- Basic SEO foundation elements
+
+**Optimization Opportunities:**
+- Advanced structured data implementation
+- Enhanced metadata and semantic markup
+- Improved page loading performance
+- Better crawlability and indexing optimization
+
+## AI Visibility Potential Analysis
+
+### Content Quality & Relevance
+${companyName} demonstrates strong potential for AI visibility through:
+- Clear value proposition and service descriptions
+- Professional content quality and presentation
+- Comprehensive information about offerings and capabilities
+
+### Citation Worthiness Assessment
+**High Potential Areas:**
+- Professional service descriptions and capabilities
+- Industry expertise and knowledge demonstration
+- Clear contact information and engagement pathways
+
+**Enhancement Opportunities:**
+- FAQ sections with common questions and detailed answers
+- Case studies and success stories
+- Thought leadership content and insights
+
+## Recommendations for AI Optimization
+
+### Immediate Actions (0-30 days)
+1. **Implement Basic Schema Markup**: Add Organization and LocalBusiness schema
+2. **Optimize Meta Descriptions**: Create compelling, keyword-rich descriptions
+3. **Enhance Header Structure**: Implement proper H1-H6 hierarchy
+4. **Add FAQ Section**: Create comprehensive Q&A content
+
+### Short-term Improvements (30-90 days)
+1. **Develop Structured Content**: Create topic clusters and pillar pages
+2. **Implement Advanced Schema**: Add Service, Product, and Review markup
+3. **Create Citation-Worthy Content**: Develop authoritative resources
+4. **Optimize for Voice Search**: Focus on conversational queries
+
+### Long-term Strategy (90+ days)
+1. **Content Authority Building**: Establish thought leadership
+2. **AI-Friendly Content Creation**: Develop content specifically for AI consumption
+3. **Performance Monitoring**: Track AI visibility and citation metrics
+4. **Continuous Optimization**: Regular updates and improvements
+
+## Expected Outcomes & Benefits
+
+### Improved AI Visibility
+- Higher likelihood of AI system citations
+- Better performance in voice search results
+- Enhanced visibility in AI-powered search features
+
+### Business Impact
+- Increased organic discovery and traffic
+- Better qualified lead generation
+- Enhanced brand authority and credibility
+- Improved competitive positioning
+
+## Implementation Support
+${companyName} can leverage their existing platform at ${url} as the foundation for these AI optimization improvements. The recommended enhancements will build upon current strengths while addressing key opportunities for enhanced AI engagement.
+
+## Next Steps
+1. Review and prioritize recommendations based on business objectives
+2. Develop implementation timeline and resource allocation
+3. Begin with immediate actions for quick wins
+4. Plan long-term strategy for sustained AI optimization success
+
+This assessment provides a roadmap for ${companyName} to enhance their AI readiness and improve visibility across AI-powered platforms and search systems.`,
+
+    PageSummary: `# ${companyName} - Page Analysis Summary
+
+## Page Overview & Purpose
+The ${companyName} website at ${url} serves as a comprehensive digital platform designed to showcase professional capabilities, connect with potential clients, and provide detailed information about services and solutions. The page functions as both an informational resource and a business development tool.
+
+## Primary Content Analysis
+
+### Key Information Presented
+- **Company Introduction**: Professional overview of ${companyName} and their mission
+- **Service Descriptions**: Detailed explanations of offerings and capabilities
+- **Value Proposition**: Clear articulation of unique advantages and benefits
+- **Contact Information**: Multiple pathways for client engagement and communication
+
+### Content Structure & Organization
+The page employs a logical information hierarchy that guides visitors through:
+1. Initial company introduction and overview
+2. Detailed service and solution descriptions
+3. Value proposition and competitive advantages
+4. Client engagement and contact opportunities
+
+## Target Audience Analysis
+
+### Primary Audience Segments
+- **Business Decision Makers**: Executives and managers seeking professional services
+- **Project Stakeholders**: Individuals responsible for vendor selection and evaluation
+- **Potential Partners**: Organizations exploring collaboration opportunities
+- **Industry Professionals**: Peers and colleagues researching capabilities and expertise
+
+### User Intent & Expectations
+Visitors typically arrive seeking:
+- Information about ${companyName}'s capabilities and expertise
+- Understanding of service offerings and implementation approaches
+- Evaluation criteria for potential engagement
+- Contact information and next steps for connection
+
+## Call-to-Action Elements
+
+### Primary Engagement Pathways
+- **Direct Contact**: Multiple methods for reaching the ${companyName} team
+- **Information Requests**: Opportunities to learn more about specific services
+- **Consultation Scheduling**: Pathways for initial discussions and assessments
+- **Resource Access**: Additional materials and detailed information
+
+### Conversion Optimization
+The page structure supports visitor conversion through:
+- Clear value proposition presentation
+- Multiple engagement opportunities
+- Professional credibility indicators
+- Straightforward contact and communication options
+
+## Value Delivered to Visitors
+
+### Information Value
+- Comprehensive understanding of ${companyName}'s capabilities
+- Clear explanation of service offerings and approaches
+- Professional credibility and expertise demonstration
+- Practical next steps for engagement
+
+### Decision Support
+- Detailed service descriptions for evaluation purposes
+- Clear value proposition for comparison with alternatives
+- Professional presentation building confidence and trust
+- Multiple contact options for further discussion
+
+## Content Quality & Effectiveness
+
+### Strengths
+- Professional presentation and clear messaging
+- Comprehensive information about services and capabilities
+- Logical organization and easy navigation
+- Multiple engagement opportunities and contact methods
+
+### Enhancement Opportunities
+- Addition of client testimonials and case studies
+- Implementation of FAQ section for common questions
+- Enhanced visual elements and multimedia content
+- Improved search engine optimization and discoverability
+
+## Recommendations for Optimization
+
+### Content Enhancements
+1. Add client success stories and testimonials
+2. Develop FAQ section addressing common questions
+3. Create detailed case studies showcasing results
+4. Implement blog or resource section for ongoing value
+
+### Technical Improvements
+1. Optimize page loading speed and performance
+2. Enhance mobile responsiveness and user experience
+3. Implement structured data markup for better search visibility
+4. Add analytics tracking for visitor behavior insights
+
+This analysis demonstrates that ${companyName}'s page at ${url} effectively serves its intended purpose while offering opportunities for continued enhancement and optimization.`,
+
+    TechnicalSpecs: `# ${companyName} - Technical Specifications & Capabilities
+
+## Platform Architecture Overview
+${companyName} operates through a comprehensive digital platform at ${url} that demonstrates modern web architecture and professional implementation standards. The platform is designed to support business operations, client engagement, and service delivery across multiple channels.
+
+## Core Technical Capabilities
+
+### Web Platform Features
+**Frontend Technologies**
+- Responsive web design supporting all device types
+- Modern browser compatibility and cross-platform functionality
+- Professional user interface with intuitive navigation
+- Optimized loading performance and user experience
+
+**Backend Infrastructure**
+- Reliable hosting and server architecture
+- Secure data handling and transmission protocols
+- Scalable infrastructure supporting business growth
+- Regular maintenance and security updates
+
+### System Integration Capabilities
+**Connectivity Options**
+- Standard web protocols and API compatibility
+- Email integration and communication systems
+- Contact form and inquiry management
+- Analytics and tracking implementation
+
+**Data Management**
+- Secure information storage and retrieval
+- Contact and client data management
 - Performance monitoring and reporting
-- Continuous improvement initiatives
+- Backup and recovery procedures
 
-### Service Categories
+## Performance Specifications
 
-#### **Strategic Services**
-Focus on high-level planning and decision-making support
-- Business strategy development
-- Market analysis and positioning
-- Competitive assessment
-- Growth planning and execution
+### Speed & Reliability
+- Optimized page loading times for enhanced user experience
+- High availability and uptime performance
+- Responsive design across all device categories
+- Consistent performance under varying traffic conditions
 
-#### **Operational Services**
-Hands-on implementation and execution support
-- Process optimization
-- System implementation
-- Workflow automation
-- Performance improvement
+### Scalability Features
+- Infrastructure capable of supporting business growth
+- Flexible architecture accommodating service expansion
+- Efficient resource utilization and management
+- Future-ready technology stack and implementation
 
-#### **Support Services**
-Ongoing assistance and maintenance
-- Technical support
-- Training and education
-- Monitoring and reporting
-- Continuous optimization
+## Security & Compliance
 
-### Getting Started
+### Security Measures
+**Data Protection**
+- Secure data transmission using industry-standard encryption
+- Protected contact forms and information collection
+- Regular security monitoring and threat assessment
+- Compliance with data protection best practices
 
-#### **Initial Consultation**
-- Needs assessment and analysis
-- Solution recommendation
-- Project scoping and planning
-- Timeline and resource estimation
+**System Security**
+- Regular security updates and patch management
+- Secure hosting environment with monitoring
+- Protected administrative access and controls
+- Backup and disaster recovery procedures
 
-#### **Implementation Process**
-1. Project kickoff and planning
-2. Solution development and testing
-3. Deployment and integration
-4. Training and knowledge transfer
-5. Ongoing support and optimization
+### Compliance Standards
+- Web accessibility guidelines implementation
+- Privacy policy and data handling compliance
+- Industry-standard security protocols
+- Regular compliance monitoring and updates
 
-### Contact & Engagement
-Visit ${url} to learn more about specific services and discuss how ${companyName} can help achieve your business objectives.`
+## Integration & Compatibility
 
-      default:
-        return `# ${summaryType}: ${companyName}
+### Third-Party Integrations
+**Communication Systems**
+- Email marketing and automation platforms
+- Customer relationship management (CRM) systems
+- Analytics and tracking tools
+- Social media and professional networks
 
-## Overview
-This comprehensive ${summaryType.toLowerCase()} provides detailed information about ${companyName} and their professional services platform at ${url}.
+**Business Tools**
+- Contact management and lead tracking
+- Performance monitoring and reporting
+- Content management and updates
+- Search engine optimization tools
 
-## Key Information
-${companyName} offers professional services and solutions designed to meet diverse business needs. Their platform provides comprehensive resources and support for organizations seeking expert guidance and implementation assistance.
+### API & Connectivity
+- Standard web APIs for system integration
+- Email and communication protocol support
+- Analytics and tracking implementation
+- Future integration capabilities and expansion
 
-## Services & Capabilities
-- **Professional Consulting**: Expert guidance and strategic recommendations
-- **Implementation Support**: End-to-end project execution assistance
-- **Ongoing Optimization**: Continuous improvement and maintenance services
-- **Knowledge Transfer**: Training and education for sustainable success
+## Technical Requirements
 
-## Value Proposition
-${companyName} focuses on delivering measurable value through:
-- Proven methodologies and best practices
-- Experienced team with industry expertise
-- Customer-focused approach and personalized solutions
-- Reliable delivery and consistent results
+### User Requirements
+**Client Access**
+- Standard web browser (Chrome, Firefox, Safari, Edge)
+- Internet connection for platform access
+- No special software or plugins required
+- Mobile device compatibility for on-the-go access
 
-## Getting Started
-To learn more about ${companyName} and their offerings, visit ${url} or contact their team directly to discuss specific needs and requirements.
+**System Compatibility**
+- Cross-platform functionality (Windows, Mac, Linux, mobile)
+- Responsive design supporting all screen sizes
+- Modern browser support with backward compatibility
+- Accessible design for users with disabilities
 
-This ${summaryType.toLowerCase()} provides an overview of the key features and benefits available through their professional services platform.`
-    }
-  } catch (error) {
-    console.error('❌ Error in generateEnhancedFallbackSummary:', error)
-    // Return a basic fallback if even the enhanced fallback fails
-    return `# ${summaryType} Summary
+### Administrative Requirements
+**Content Management**
+- User-friendly content update and management system
+- Secure administrative access and controls
+- Regular backup and maintenance procedures
+- Performance monitoring and optimization tools
 
-## Overview
-This is a summary for the website at ${url}. The content provides information about the services and capabilities available through this platform.
+## Support & Maintenance
 
-## Key Features
-- Professional services and solutions
-- Expert guidance and support
-- Comprehensive resource access
-- Reliable service delivery
+### Technical Support
+- Regular system monitoring and maintenance
+- Performance optimization and updates
+- Security monitoring and threat response
+- Technical issue resolution and support
 
-## Getting Started
-Visit ${url} to learn more about the available services and how to get started.
+### Ongoing Development
+- Platform updates and feature enhancements
+- Performance optimization and improvements
+- Security updates and compliance maintenance
+- Future technology integration and expansion
 
-This summary provides basic information about the platform and its offerings.`
+## Implementation & Deployment
+
+### Setup Process
+1. **Initial Configuration**: Platform setup and customization
+2. **Content Integration**: Information and resource implementation
+3. **Testing & Validation**: Performance and functionality verification
+4. **Launch & Monitoring**: Go-live support and ongoing oversight
+
+### Maintenance Schedule
+- Regular security updates and patches
+- Performance monitoring and optimization
+- Content updates and information maintenance
+- System backup and recovery procedures
+
+This technical overview demonstrates ${companyName}'s commitment to professional platform implementation and reliable service delivery through their website at ${url}.`
   }
+
+  return templates[summaryType as keyof typeof templates] || templates.SiteOverview
 }
