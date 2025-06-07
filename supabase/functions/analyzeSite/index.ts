@@ -9,20 +9,15 @@ const corsHeaders = {
 // Get environment variables
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-// Try multiple possible environment variable names for OpenAI
-const openaiApiKey = Deno.env.get("OPENAI_API_KEY") || 
-                     Deno.env.get("OPENAI_KEY") || 
-                     Deno.env.get("OPEN_AI_API_KEY") ||
-                     Deno.env.get("OPEN_AI_KEY");
+const geminiApiKey = Deno.env.get("GEMINI_API_KEY");
 
 // Debug environment variables
 console.log("🔧 Environment check:", {
   supabaseUrl: !!supabaseUrl,
   supabaseServiceKey: !!supabaseServiceKey,
-  openaiApiKey: !!openaiApiKey,
-  openaiKeyLength: openaiApiKey?.length || 0,
-  openaiKeyPrefix: openaiApiKey?.substring(0, 15) + "..." || "none"
+  geminiApiKey: !!geminiApiKey,
+  geminiKeyLength: geminiApiKey?.length || 0,
+  geminiKeyPrefix: geminiApiKey?.substring(0, 15) + "..." || "none"
 });
 
 // Validate required environment variables
@@ -30,7 +25,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing required environment variables:", {
     supabaseUrl: !!supabaseUrl,
     supabaseServiceKey: !!supabaseServiceKey,
-    openaiApiKey: !!openaiApiKey
+    geminiApiKey: !!geminiApiKey
   });
   throw new Error("Missing required Supabase environment variables");
 }
@@ -132,32 +127,27 @@ AI Readiness Indicators:
   }
 }
 
-// Function to call OpenAI API
-async function analyzeWithOpenAI(url: string, websiteContent: string): Promise<any> {
-  if (!openaiApiKey) {
-    throw new Error("OpenAI API key not configured");
+// Function to call Gemini API
+async function analyzeWithGemini(url: string, websiteContent: string): Promise<any> {
+  if (!geminiApiKey) {
+    throw new Error("Gemini API key not configured");
   }
 
-  console.log("🤖 === STARTING OPENAI API CALL ===");
-  console.log(`🔑 API Key Status: PRESENT (${openaiApiKey.length} chars)`);
-  console.log(`🔑 Key Format: ${openaiApiKey.substring(0, 8)}...${openaiApiKey.substring(openaiApiKey.length - 4)}`);
+  console.log("🤖 === STARTING GEMINI API CALL ===");
+  console.log(`🔑 API Key Status: PRESENT (${geminiApiKey.length} chars)`);
+  console.log(`🔑 Key Format: ${geminiApiKey.substring(0, 8)}...${geminiApiKey.substring(geminiApiKey.length - 4)}`);
   console.log(`📊 Content length being analyzed: ${websiteContent.length} characters`);
   
   try {
-    const analysisId = `OPENAI-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const analysisId = `GEMINI-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     console.log(`🆔 Generated Analysis ID: ${analysisId}`);
     
     const requestBody = {
-      model: "gpt-4o-mini", // Using the latest efficient model
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert AI visibility consultant who analyzes websites for their compatibility with AI systems like ChatGPT, Claude, Perplexity, voice assistants, and other AI tools. You provide detailed, actionable analysis with specific scores and recommendations."
-        },
-        {
-          role: "user",
-          content: `Analyze this website for AI visibility optimization:
+      contents: [{
+        parts: [{
+          text: `You are an expert AI visibility consultant. Analyze this website for AI system compatibility and provide precise scores.
 
+Website Content Analysis:
 ${websiteContent}
 
 Based on the actual content and structure provided, give me precise scores (0-100) for these 5 categories:
@@ -186,46 +176,50 @@ Return ONLY a valid JSON response in this exact format:
     "Specific actionable recommendation 2", 
     "Specific actionable recommendation 3"
   ],
-  "data_source": "OpenAI GPT-4 Real Analysis"
+  "data_source": "Google Gemini Real Analysis"
 }`
-        }
-      ],
-      max_tokens: 2000,
-      temperature: 0.1,
-      top_p: 0.9
+        }]
+      }],
+      generationConfig: {
+        temperature: 0.1,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048,
+      }
     };
 
-    console.log("📤 === SENDING REQUEST TO OPENAI ===");
-    console.log(`📋 Model: ${requestBody.model}`);
-    console.log(`📏 Max Tokens: ${requestBody.max_tokens}`);
-    console.log(`🌡️ Temperature: ${requestBody.temperature}`);
-    console.log(`📝 Message Count: ${requestBody.messages.length}`);
-    console.log(`📊 User Message Length: ${requestBody.messages[1].content.length} chars`);
+    console.log("📤 === SENDING REQUEST TO GEMINI ===");
+    console.log(`📋 Model: gemini-1.5-flash`);
+    console.log(`📏 Max Tokens: ${requestBody.generationConfig.maxOutputTokens}`);
+    console.log(`🌡️ Temperature: ${requestBody.generationConfig.temperature}`);
+    console.log(`📝 Content Length: ${requestBody.contents[0].parts[0].text.length} chars`);
     
     const startTime = Date.now();
     
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${openaiApiKey}`,
-        "User-Agent": "SEOgenix/1.0"
-      },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(30000) // 30 second timeout
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "SEOgenix/1.0"
+        },
+        body: JSON.stringify(requestBody),
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      }
+    );
 
     const endTime = Date.now();
     const duration = endTime - startTime;
     
-    console.log(`📥 === OPENAI API RESPONSE ===`);
+    console.log(`📥 === GEMINI API RESPONSE ===`);
     console.log(`⏱️ Request Duration: ${duration}ms`);
     console.log(`📊 Response Status: ${response.status} ${response.statusText}`);
     console.log(`📋 Response Headers:`, Object.fromEntries(response.headers.entries()));
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("❌ === OPENAI API ERROR ===");
+      console.error("❌ === GEMINI API ERROR ===");
       console.error(`💥 Status: ${response.status} ${response.statusText}`);
       console.error(`📝 Error Body: ${errorText}`);
       console.error(`🔍 Error Length: ${errorText.length} characters`);
@@ -236,15 +230,15 @@ Return ONLY a valid JSON response in this exact format:
         console.error(`🔍 Parsed Error JSON:`, errorJson);
         
         if (errorJson.error) {
-          console.error(`❌ Error Type: ${errorJson.error.type}`);
           console.error(`❌ Error Code: ${errorJson.error.code}`);
           console.error(`❌ Error Message: ${errorJson.error.message}`);
+          console.error(`❌ Error Status: ${errorJson.error.status}`);
         }
       } catch (parseError) {
         console.error(`❌ Could not parse error as JSON:`, parseError);
       }
       
-      throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
+      throw new Error(`Gemini API error (${response.status}): ${errorText}`);
     }
 
     const responseText = await response.text();
@@ -254,32 +248,33 @@ Return ONLY a valid JSON response in this exact format:
     let data;
     try {
       data = JSON.parse(responseText);
-      console.log("✅ Successfully parsed OpenAI response JSON");
+      console.log("✅ Successfully parsed Gemini response JSON");
     } catch (parseError) {
-      console.error("❌ Failed to parse OpenAI response as JSON:", parseError);
+      console.error("❌ Failed to parse Gemini response as JSON:", parseError);
       console.error(`📝 Raw response: ${responseText}`);
-      throw new Error(`Invalid JSON response from OpenAI: ${parseError.message}`);
+      throw new Error(`Invalid JSON response from Gemini: ${parseError.message}`);
     }
     
     console.log(`📊 Response Structure Check:`);
-    console.log(`   - Has choices: ${!!data.choices}`);
-    console.log(`   - Choices length: ${data.choices?.length || 0}`);
-    console.log(`   - Has first choice: ${!!data.choices?.[0]}`);
-    console.log(`   - Has message: ${!!data.choices?.[0]?.message}`);
-    console.log(`   - Has content: ${!!data.choices?.[0]?.message?.content}`);
+    console.log(`   - Has candidates: ${!!data.candidates}`);
+    console.log(`   - Candidates length: ${data.candidates?.length || 0}`);
+    console.log(`   - Has first candidate: ${!!data.candidates?.[0]}`);
+    console.log(`   - Has content: ${!!data.candidates?.[0]?.content}`);
+    console.log(`   - Has parts: ${!!data.candidates?.[0]?.content?.parts}`);
+    console.log(`   - Has text: ${!!data.candidates?.[0]?.content?.parts?.[0]?.text}`);
     
-    if (data.usage) {
-      console.log(`💰 Token Usage:`, data.usage);
+    if (data.usageMetadata) {
+      console.log(`💰 Token Usage:`, data.usageMetadata);
     }
     
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      console.error("❌ Invalid OpenAI response structure");
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content || !data.candidates[0].content.parts || !data.candidates[0].content.parts[0]) {
+      console.error("❌ Invalid Gemini response structure");
       console.error("📋 Full response:", data);
-      throw new Error("Invalid response structure from OpenAI API");
+      throw new Error("Invalid response structure from Gemini API");
     }
     
-    const content = data.choices[0].message.content;
-    console.log(`📝 === PROCESSING OPENAI CONTENT ===`);
+    const content = data.candidates[0].content.parts[0].text;
+    console.log(`📝 === PROCESSING GEMINI CONTENT ===`);
     console.log(`📏 Content Length: ${content.length} characters`);
     console.log(`🔍 First 300 chars: ${content.substring(0, 300)}...`);
     console.log(`🔍 Last 100 chars: ...${content.substring(content.length - 100)}`);
@@ -288,9 +283,9 @@ Return ONLY a valid JSON response in this exact format:
     console.log("🔍 Searching for JSON in response...");
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error("❌ No JSON found in OpenAI response");
+      console.error("❌ No JSON found in Gemini response");
       console.error("📝 Full content:", content);
-      throw new Error("No valid JSON found in OpenAI response");
+      throw new Error("No valid JSON found in Gemini response");
     }
     
     console.log(`✅ Found JSON match (${jsonMatch[0].length} chars)`);
@@ -303,7 +298,7 @@ Return ONLY a valid JSON response in this exact format:
     } catch (parseError) {
       console.error("❌ Failed to parse extracted JSON:", parseError);
       console.error("📝 JSON content:", jsonMatch[0]);
-      throw new Error(`Invalid JSON format in OpenAI response: ${parseError.message}`);
+      throw new Error(`Invalid JSON format in Gemini response: ${parseError.message}`);
     }
     
     // Validate the parsed response has required fields
@@ -334,7 +329,7 @@ Return ONLY a valid JSON response in this exact format:
     
     // Log the analysis ID to verify it's real
     if (parsed.analysis_id) {
-      console.log(`🆔 Analysis ID from OpenAI: ${parsed.analysis_id}`);
+      console.log(`🆔 Analysis ID from Gemini: ${parsed.analysis_id}`);
       if (parsed.analysis_id === analysisId) {
         console.log("✅ Analysis ID matches expected value");
       } else {
@@ -344,10 +339,10 @@ Return ONLY a valid JSON response in this exact format:
       console.log("⚠️ No analysis_id in response");
     }
     
-    console.log("🎉 === OPENAI ANALYSIS COMPLETE ===");
+    console.log("🎉 === GEMINI ANALYSIS COMPLETE ===");
     return parsed;
   } catch (error) {
-    console.error("💥 === OPENAI API CALL FAILED ===");
+    console.error("💥 === GEMINI API CALL FAILED ===");
     console.error(`❌ Error Type: ${error.constructor.name}`);
     console.error(`❌ Error Message: ${error.message}`);
     console.error(`❌ Error Stack:`, error.stack);
@@ -421,7 +416,7 @@ Citation Potential (${scores.citation_score}/100): ${getScoreDescription(scores.
 
 Technical SEO (${scores.technical_seo_score}/100): ${getScoreDescription(scores.technical_seo_score)} - Basic technical factors ${scores.technical_seo_score >= 70 ? 'are well optimized' : 'need attention'}.
 
-⚠️ NOTE: This is enhanced mock data generated because: ${reason || 'the OpenAI API was not available'}. The scores are based on domain analysis and realistic patterns, but a real API analysis would provide more accurate results.`;
+⚠️ NOTE: This is enhanced mock data generated because: ${reason || 'the Gemini API was not available'}. The scores are based on domain analysis and realistic patterns, but a real API analysis would provide more accurate results.`;
 
   const recommendations = [
     scores.schema_score < 70 ? "Implement comprehensive schema.org structured data markup" : "Enhance existing schema markup with additional entity types",
@@ -498,7 +493,7 @@ Deno.serve(async (req) => {
     let analysisId = "";
     let websiteContent = "";
 
-    // Always fetch website content for better mock analysis
+    // Always fetch website content for better analysis
     try {
       console.log("🌐 === FETCHING WEBSITE CONTENT ===");
       websiteContent = await fetchWebsiteContent(url);
@@ -509,68 +504,66 @@ Deno.serve(async (req) => {
     }
 
     // COMPREHENSIVE API KEY VALIDATION WITH DETAILED DEBUGGING
-    console.log("🔑 === OPENAI API KEY VALIDATION ===");
-    console.log(`📋 Key Present: ${!!openaiApiKey}`);
+    console.log("🔑 === GEMINI API KEY VALIDATION ===");
+    console.log(`📋 Key Present: ${!!geminiApiKey}`);
     
-    if (openaiApiKey) {
-      console.log(`📏 Key Length: ${openaiApiKey.length} characters`);
-      console.log(`🔤 Key First 20 chars: "${openaiApiKey.substring(0, 20)}"`);
-      console.log(`🔤 Key Last 10 chars: "...${openaiApiKey.substring(openaiApiKey.length - 10)}"`);
-      console.log(`🔍 Key contains spaces: ${openaiApiKey.includes(' ')}`);
-      console.log(`🔍 Key contains newlines: ${openaiApiKey.includes('\n')}`);
-      console.log(`🔍 Key is trimmed: ${openaiApiKey === openaiApiKey.trim()}`);
-      console.log(`🔍 Key contains 'your-': ${openaiApiKey.includes('your-')}`);
-      console.log(`🔍 Key contains 'example': ${openaiApiKey.includes('example')}`);
-      console.log(`🔍 Key contains 'placeholder': ${openaiApiKey.includes('placeholder')}`);
-      console.log(`🔍 Key contains 'test': ${openaiApiKey.includes('test')}`);
-      console.log(`🔍 Key contains 'demo': ${openaiApiKey.includes('demo')}`);
-      console.log(`🔍 Key starts with 'sk-': ${openaiApiKey.startsWith('sk-')}`);
+    if (geminiApiKey) {
+      console.log(`📏 Key Length: ${geminiApiKey.length} characters`);
+      console.log(`🔤 Key First 20 chars: "${geminiApiKey.substring(0, 20)}"`);
+      console.log(`🔤 Key Last 10 chars: "...${geminiApiKey.substring(geminiApiKey.length - 10)}"`);
+      console.log(`🔍 Key contains spaces: ${geminiApiKey.includes(' ')}`);
+      console.log(`🔍 Key contains newlines: ${geminiApiKey.includes('\n')}`);
+      console.log(`🔍 Key is trimmed: ${geminiApiKey === geminiApiKey.trim()}`);
+      console.log(`🔍 Key contains 'your-': ${geminiApiKey.includes('your-')}`);
+      console.log(`🔍 Key contains 'example': ${geminiApiKey.includes('example')}`);
+      console.log(`🔍 Key contains 'placeholder': ${geminiApiKey.includes('placeholder')}`);
+      console.log(`🔍 Key contains 'test': ${geminiApiKey.includes('test')}`);
+      console.log(`🔍 Key contains 'demo': ${geminiApiKey.includes('demo')}`);
+      console.log(`🔍 Key starts with 'AIza': ${geminiApiKey.startsWith('AIza')}`);
       
-      // NEW: More detailed format validation
-      console.log(`🔍 Key starts with 'sk-proj-': ${openaiApiKey.startsWith('sk-proj-')}`);
-      console.log(`🔍 Key starts with 'sk-svcacct-': ${openaiApiKey.startsWith('sk-svcacct-')}`);
+      // Gemini API keys typically start with "AIza" and are 39 characters long
       console.log(`🔍 Key character breakdown:`);
-      console.log(`   - Total length: ${openaiApiKey.length}`);
-      console.log(`   - Alphanumeric chars: ${(openaiApiKey.match(/[a-zA-Z0-9]/g) || []).length}`);
-      console.log(`   - Dash chars: ${(openaiApiKey.match(/-/g) || []).length}`);
-      console.log(`   - Other chars: ${openaiApiKey.length - (openaiApiKey.match(/[a-zA-Z0-9-]/g) || []).length}`);
+      console.log(`   - Total length: ${geminiApiKey.length}`);
+      console.log(`   - Alphanumeric chars: ${(geminiApiKey.match(/[a-zA-Z0-9]/g) || []).length}`);
+      console.log(`   - Dash chars: ${(geminiApiKey.match(/-/g) || []).length}`);
+      console.log(`   - Underscore chars: ${(geminiApiKey.match(/_/g) || []).length}`);
+      console.log(`   - Other chars: ${geminiApiKey.length - (geminiApiKey.match(/[a-zA-Z0-9-_]/g) || []).length}`);
     } else {
-      console.log("❌ No API key found in any environment variable");
-      console.log("🔍 Checked variables: OPENAI_API_KEY, OPENAI_KEY, OPEN_AI_API_KEY, OPEN_AI_KEY");
+      console.log("❌ No API key found in GEMINI_API_KEY environment variable");
     }
     
-    // UPDATED VALIDATION - More flexible for different OpenAI key formats
-    const hasValidApiKey = openaiApiKey && 
-                          openaiApiKey.trim().length >= 40 && // OpenAI keys are typically 51+ chars
-                          (openaiApiKey.startsWith('sk-') || openaiApiKey.startsWith('sk-proj-') || openaiApiKey.startsWith('sk-svcacct-')) &&
-                          !openaiApiKey.includes('your-') &&
-                          !openaiApiKey.includes('example') &&
-                          !openaiApiKey.includes('placeholder') &&
-                          !openaiApiKey.includes('test-key') &&
-                          !openaiApiKey.includes('demo-key') &&
-                          openaiApiKey === openaiApiKey.trim(); // No extra whitespace
+    // UPDATED VALIDATION - For Gemini API keys
+    const hasValidApiKey = geminiApiKey && 
+                          geminiApiKey.trim().length >= 35 && // Gemini keys are typically 39 chars
+                          geminiApiKey.startsWith('AIza') &&
+                          !geminiApiKey.includes('your-') &&
+                          !geminiApiKey.includes('example') &&
+                          !geminiApiKey.includes('placeholder') &&
+                          !geminiApiKey.includes('test-key') &&
+                          !geminiApiKey.includes('demo-key') &&
+                          geminiApiKey === geminiApiKey.trim(); // No extra whitespace
     
     console.log(`✅ Final Validation Result: ${hasValidApiKey}`);
     
     if (!hasValidApiKey) {
       console.log("❌ === API KEY VALIDATION FAILED ===");
-      if (!openaiApiKey) {
+      if (!geminiApiKey) {
         console.log("   ❌ Key is missing entirely");
-      } else if (openaiApiKey.trim().length < 40) {
-        console.log(`   ❌ Key too short (${openaiApiKey.trim().length} chars, need 40+)`);
-      } else if (!openaiApiKey.startsWith('sk-') && !openaiApiKey.startsWith('sk-proj-') && !openaiApiKey.startsWith('sk-svcacct-')) {
-        console.log("   ❌ Key doesn't start with valid OpenAI prefix (sk-, sk-proj-, sk-svcacct-)");
-      } else if (openaiApiKey.includes('your-')) {
+      } else if (geminiApiKey.trim().length < 35) {
+        console.log(`   ❌ Key too short (${geminiApiKey.trim().length} chars, need 35+)`);
+      } else if (!geminiApiKey.startsWith('AIza')) {
+        console.log("   ❌ Key doesn't start with 'AIza' (Gemini API key format)");
+      } else if (geminiApiKey.includes('your-')) {
         console.log("   ❌ Key contains 'your-' (placeholder pattern)");
-      } else if (openaiApiKey.includes('example')) {
+      } else if (geminiApiKey.includes('example')) {
         console.log("   ❌ Key contains 'example' (placeholder pattern)");
-      } else if (openaiApiKey.includes('placeholder')) {
+      } else if (geminiApiKey.includes('placeholder')) {
         console.log("   ❌ Key contains 'placeholder'");
-      } else if (openaiApiKey.includes('test-key')) {
+      } else if (geminiApiKey.includes('test-key')) {
         console.log("   ❌ Key contains 'test-key'");
-      } else if (openaiApiKey.includes('demo-key')) {
+      } else if (geminiApiKey.includes('demo-key')) {
         console.log("   ❌ Key contains 'demo-key'");
-      } else if (openaiApiKey !== openaiApiKey.trim()) {
+      } else if (geminiApiKey !== geminiApiKey.trim()) {
         console.log("   ❌ Key has extra whitespace");
       } else {
         console.log("   ❌ Key failed validation for unknown reason");
@@ -578,37 +571,37 @@ Deno.serve(async (req) => {
     }
     console.log("🔑 === END VALIDATION ===");
 
-    // Try to get real analysis from OpenAI
+    // Try to get real analysis from Gemini
     if (hasValidApiKey) {
       try {
-        console.log("🤖 ✅ API KEY VALID - Attempting OpenAI API analysis...");
+        console.log("🤖 ✅ API KEY VALID - Attempting Gemini API analysis...");
         
-        scores = await analyzeWithOpenAI(url, websiteContent);
+        scores = await analyzeWithGemini(url, websiteContent);
         analysisText = scores.analysis;
         analysisId = scores.analysis_id || "No ID provided";
         usingRealData = true;
-        dataSource = "OpenAI GPT-4";
+        dataSource = "Google Gemini";
         
-        console.log("🎉 ✅ SUCCESS: Real analysis from OpenAI API completed!");
+        console.log("🎉 ✅ SUCCESS: Real analysis from Gemini API completed!");
         console.log(`🆔 Analysis ID: ${analysisId}`);
-        console.log(`📊 Data Source: ${scores.data_source || 'OpenAI GPT-4'}`);
+        console.log(`📊 Data Source: ${scores.data_source || 'Google Gemini'}`);
       } catch (apiError) {
-        console.error("❌ === OPENAI API FAILED ===");
+        console.error("❌ === GEMINI API FAILED ===");
         console.error(`💥 Error: ${apiError.message}`);
         console.error(`🔍 Error Type: ${apiError.constructor.name}`);
         console.log("🔄 Falling back to enhanced mock analysis...");
         
-        scores = getEnhancedMockAnalysis(url, websiteContent, `OpenAI API Error: ${apiError.message}`);
+        scores = getEnhancedMockAnalysis(url, websiteContent, `Gemini API Error: ${apiError.message}`);
         analysisText = scores.analysis;
         analysisId = scores.analysis_id;
         usingRealData = false;
         dataSource = "Enhanced Mock (API Failed)";
       }
     } else {
-      console.log("❌ OpenAI API key validation failed");
+      console.log("❌ Gemini API key validation failed");
       console.log("🔄 Using enhanced mock analysis based on website content...");
       
-      scores = getEnhancedMockAnalysis(url, websiteContent, "Invalid or missing OpenAI API key");
+      scores = getEnhancedMockAnalysis(url, websiteContent, "Invalid or missing Gemini API key");
       analysisText = scores.analysis;
       analysisId = scores.analysis_id;
       usingRealData = false;
@@ -619,6 +612,25 @@ Deno.serve(async (req) => {
     console.log(`🎯 Real Data Status: ${usingRealData}`);
     console.log(`📊 Data Source: ${dataSource}`);
     console.log(`🆔 Final Analysis ID: ${analysisId}`);
+
+    // Track audit usage
+    try {
+      const { data: usageData, error: usageError } = await supabase.rpc(
+        'increment_usage',
+        {
+          p_user_id: user_id,
+          p_type: 'audits'
+        }
+      );
+
+      if (usageError) {
+        console.warn("⚠️ Failed to track usage:", usageError.message);
+      } else {
+        console.log("✅ Usage tracked successfully");
+      }
+    } catch (usageTrackError) {
+      console.warn("⚠️ Error tracking usage:", usageTrackError);
+    }
 
     // Create audit with service role client
     console.log("💾 === SAVING TO DATABASE ===");
