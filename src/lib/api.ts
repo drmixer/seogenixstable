@@ -61,6 +61,46 @@ export const siteApi = {
   }
 };
 
+// API functions for audits
+export const auditApi = {
+  runAudit: async (siteId: string, url: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const result = await callEdgeFunction('analyzeSite', {
+      site_id: siteId,
+      url,
+      user_id: user.id
+    });
+    
+    return result;
+  },
+
+  getLatestAudit: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('audits')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error; // PGRST116 is "no rows returned"
+    return data;
+  },
+
+  getAudits: async (siteId: string) => {
+    const { data, error } = await supabase
+      .from('audits')
+      .select('*')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
 // API functions for summaries - ENHANCED
 export const summaryApi = {
   generateSummary: async (siteId: string, url: string, summaryType: string) => {
