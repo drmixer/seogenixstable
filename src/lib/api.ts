@@ -251,29 +251,52 @@ export const auditApi = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Generate mock audit data for now
-      const mockAudit = {
-        site_id: siteId,
-        ai_visibility_score: Math.floor(Math.random() * 40) + 60, // 60-100
-        schema_score: Math.floor(Math.random() * 40) + 60,
-        semantic_score: Math.floor(Math.random() * 40) + 60,
-        citation_score: Math.floor(Math.random() * 40) + 60,
-        technical_seo_score: Math.floor(Math.random() * 40) + 60,
-        created_at: new Date().toISOString()
-      };
+      console.log('🚀 Calling analyzeSite edge function with:', { siteId, url, user_id: user.id });
 
-      // Save audit to database
-      const { data: savedAudit, error: auditError } = await supabase
+      // Call the analyzeSite edge function
+      const { data, error } = await supabase.functions.invoke('analyzeSite', {
+        body: { siteId, url, user_id: user.id }
+      });
+
+      console.log('📥 analyzeSite response:', { data, error });
+
+      if (error) {
+        console.error('❌ analyzeSite edge function error:', error);
+        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+      }
+
+      if (!data) {
+        throw new Error('No data returned from analyzeSite edge function');
+      }
+
+      if (data.error) {
+        console.error('❌ analyzeSite returned error:', data.error);
+        throw new Error(`Analysis failed: ${data.error}`);
+      }
+
+      if (!data.audit) {
+        throw new Error('Invalid response: missing audit data');
+      }
+
+      console.log('✅ analyzeSite completed successfully');
+
+      // Save the audit to the database
+      const { data: savedAudit, error: dbError } = await supabase
         .from('audits')
-        .insert([mockAudit])
+        .insert([data.audit])
         .select()
         .single();
 
-      if (auditError) throw auditError;
+      if (dbError) {
+        console.error('❌ Database error saving audit:', dbError);
+        throw new Error(`Failed to save audit: ${dbError.message}`);
+      }
+
+      console.log('✅ Audit saved to database:', savedAudit);
 
       return { audit: savedAudit };
     } catch (error) {
-      console.error('Error running audit:', error);
+      console.error('❌ Error running audit:', error);
       throw error;
     }
   },
@@ -314,46 +337,50 @@ export const citationApi = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Generate mock citation data for now
-      const mockCitations = [
-        {
-          site_id: siteId,
-          source_type: 'Google Search',
-          snippet_text: `According to ${new URL(url).hostname}, this is a comprehensive resource for professional services and solutions.`,
-          url: 'https://www.google.com/search?q=' + encodeURIComponent(url),
-          detected_at: new Date().toISOString()
-        },
-        {
-          site_id: siteId,
-          source_type: 'News Article',
-          snippet_text: `Industry experts recommend ${new URL(url).hostname} as a leading provider in their field.`,
-          url: 'https://example-news.com/article',
-          detected_at: new Date().toISOString()
+      console.log('🚀 Calling trackCitations edge function with:', { siteId, url });
+
+      // Call the trackCitations edge function
+      const { data, error } = await supabase.functions.invoke('trackCitations', {
+        body: { siteId, url, user_id: user.id }
+      });
+
+      console.log('📥 trackCitations response:', { data, error });
+
+      if (error) {
+        console.error('❌ trackCitations edge function error:', error);
+        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+      }
+
+      if (!data) {
+        throw new Error('No data returned from trackCitations edge function');
+      }
+
+      if (data.error) {
+        console.error('❌ trackCitations returned error:', data.error);
+        throw new Error(`Citation tracking failed: ${data.error}`);
+      }
+
+      console.log('✅ trackCitations completed successfully');
+
+      // Save citations to database if any were found
+      if (data.citations && data.citations.length > 0) {
+        const { data: savedCitations, error: citationError } = await supabase
+          .from('citations')
+          .insert(data.citations)
+          .select();
+
+        if (citationError) {
+          console.error('❌ Database error saving citations:', citationError);
+          // Don't throw here, just log the error
+        } else {
+          console.log('✅ Citations saved to database:', savedCitations);
+          data.citations = savedCitations;
         }
-      ];
+      }
 
-      // Save citations to database
-      const { data: savedCitations, error: citationError } = await supabase
-        .from('citations')
-        .insert(mockCitations)
-        .select();
-
-      if (citationError) throw citationError;
-
-      return {
-        citations: savedCitations,
-        new_citations_found: savedCitations.length,
-        assistant_response: `Based on my search, ${new URL(url).hostname} appears to be a professional service provider with a strong online presence. The site offers comprehensive solutions and has been referenced in various online sources as a reliable resource in their field.`,
-        search_summary: {
-          google_results: 15,
-          news_results: 3,
-          reddit_results: 2,
-          high_authority_citations: 1
-        },
-        platforms_checked: ['Google', 'News', 'Reddit']
-      };
+      return data;
     } catch (error) {
-      console.error('Error tracking citations:', error);
+      console.error('❌ Error tracking citations:', error);
       throw error;
     }
   }
