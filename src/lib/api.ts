@@ -401,55 +401,39 @@ export const schemaApi = {
 
   async generateSchema(url: string, schemaType: string): Promise<{ schema: string }> {
     try {
-      // Generate mock schema for now
-      const domain = new URL(url).hostname;
-      const siteName = domain.replace('www.', '').split('.')[0];
+      console.log('🚀 Calling generateSchema edge function with:', { url, schemaType });
       
-      let schema = '';
-      
-      switch (schemaType) {
-        case 'Organization':
-          schema = `{
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  "name": "${siteName.charAt(0).toUpperCase() + siteName.slice(1)}",
-  "url": "${url}",
-  "description": "Professional services and solutions provider",
-  "contactPoint": {
-    "@type": "ContactPoint",
-    "contactType": "customer service",
-    "url": "${url}"
-  }
-}`;
-          break;
-        case 'LocalBusiness':
-          schema = `{
-  "@context": "https://schema.org",
-  "@type": "LocalBusiness",
-  "name": "${siteName.charAt(0).toUpperCase() + siteName.slice(1)}",
-  "url": "${url}",
-  "description": "Local business providing professional services",
-  "address": {
-    "@type": "PostalAddress",
-    "addressLocality": "City",
-    "addressRegion": "State",
-    "addressCountry": "US"
-  }
-}`;
-          break;
-        default:
-          schema = `{
-  "@context": "https://schema.org",
-  "@type": "WebSite",
-  "name": "${siteName.charAt(0).toUpperCase() + siteName.slice(1)}",
-  "url": "${url}",
-  "description": "Professional website providing valuable services and information"
-}`;
+      // Validate inputs before making the call
+      if (!url || !schemaType) {
+        throw new Error('Missing required parameters: url or schemaType');
       }
 
-      return { schema };
+      // Call the generateSchema edge function
+      const { data, error } = await supabase.functions.invoke('generateSchema', {
+        body: { url: url.trim(), schemaType: schemaType.trim() }
+      });
+
+      console.log('📥 generateSchema response:', { data, error });
+
+      if (error) {
+        console.error('❌ generateSchema edge function error:', error);
+        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+      }
+
+      if (!data) {
+        throw new Error('No data returned from generateSchema edge function');
+      }
+
+      if (data.error) {
+        console.error('❌ generateSchema returned error:', data.error);
+        throw new Error(`Schema generation failed: ${data.error}`);
+      }
+
+      console.log('✅ generateSchema completed successfully');
+
+      return { schema: data.schema };
     } catch (error) {
-      console.error('Error generating schema:', error);
+      console.error('❌ Error generating schema:', error);
       throw error;
     }
   }
