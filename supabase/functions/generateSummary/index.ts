@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
 
     console.log(`🚀 Generating ${summaryType} summary for ${url}`)
 
-    // Generate summary content
+    // Generate summary content - this will always return content, never throw
     const content = await generateSummaryContent(url, summaryType)
     const wordCount = content.split(/\s+/).filter(word => word.length > 0).length
 
@@ -88,16 +88,47 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('❌ Error in generateSummary function:', error)
     
-    return new Response(
-      JSON.stringify({ 
-        error: 'Failed to generate summary',
-        details: error.message 
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500,
-      },
-    )
+    // Even in case of unexpected errors, try to return a basic template response
+    try {
+      const { siteId, url, summaryType } = await req.json().catch(() => ({ 
+        siteId: 'unknown', 
+        url: 'https://example.com', 
+        summaryType: 'SiteOverview' 
+      }))
+      
+      const fallbackContent = generateEnhancedTemplate(url, summaryType, 'Example Company')
+      const wordCount = fallbackContent.split(/\s+/).filter(word => word.length > 0).length
+      
+      return new Response(
+        JSON.stringify({
+          summary: {
+            site_id: siteId,
+            summary_type: summaryType,
+            content: fallbackContent,
+            created_at: new Date().toISOString()
+          },
+          dataSource: 'Fallback Template Generator',
+          wordCount,
+          warning: 'Generated using fallback template due to system error'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200,
+        },
+      )
+    } catch (fallbackError) {
+      console.error('❌ Even fallback generation failed:', fallbackError)
+      return new Response(
+        JSON.stringify({ 
+          error: 'Failed to generate summary',
+          details: error.message 
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        },
+      )
+    }
   }
 })
 
@@ -140,7 +171,7 @@ async function generateSummaryContent(url: string, summaryType: string): Promise
     console.log('📝 No valid Gemini API key found, using enhanced templates')
   }
   
-  // Use enhanced template-based generation
+  // Always return template-based content as fallback
   console.log('📝 Generating content with enhanced templates')
   return generateEnhancedTemplate(url, summaryType, companyName)
 }
@@ -227,44 +258,39 @@ Write as technical overview in 400-500 words.`
 
   const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview
 
-  try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 2048,
-        }
-      })
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
-      throw new Error(`Gemini API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-    
-    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      const generatedText = data.candidates[0].content.parts[0].text
-      if (generatedText.trim().length > 100) {
-        return generatedText
-      } else {
-        throw new Error('Generated content too short')
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        topK: 40,
+        topP: 0.95,
+        maxOutputTokens: 2048,
       }
-    }
-    
-    console.error('❌ Gemini API returned unexpected response structure:', data)
-    throw new Error('Invalid response structure from Gemini API')
-  } catch (error) {
-    console.error('❌ Gemini API request failed:', error)
-    throw new Error(`Gemini API request failed: ${error.message}`)
+    })
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
+    throw new Error(`Gemini API error: ${response.status}`)
   }
+
+  const data = await response.json()
+  
+  if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+    const generatedText = data.candidates[0].content.parts[0].text
+    if (generatedText.trim().length > 100) {
+      return generatedText
+    } else {
+      throw new Error('Generated content too short')
+    }
+  }
+  
+  console.error('❌ Gemini API returned unexpected response structure:', data)
+  throw new Error('Invalid response structure from Gemini API')
 }
 
 function generateEnhancedTemplate(url: string, summaryType: string, companyName: string): string {
