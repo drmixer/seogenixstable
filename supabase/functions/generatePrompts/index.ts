@@ -139,43 +139,94 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   }
 }
 
-// Helper function to extract and parse JSON from AI response
+// Helper function to extract and parse JSON from AI response with enhanced logic
 function extractAndParseJSON(aiResponse: string): any {
-  console.log(`🔍 Attempting to extract JSON from AI response: ${aiResponse.substring(0, 300)}...`);
+  console.log(`🔍 Attempting to extract JSON from AI response: ${aiResponse.substring(0, 500)}...`);
+  
+  // Clean the response first
+  let cleanResponse = aiResponse.trim();
+  
+  // Remove common prefixes and suffixes that might interfere
+  cleanResponse = cleanResponse.replace(/^Here's the JSON.*?:/i, '');
+  cleanResponse = cleanResponse.replace(/^Here is the JSON.*?:/i, '');
+  cleanResponse = cleanResponse.replace(/^The JSON.*?:/i, '');
+  cleanResponse = cleanResponse.replace(/^JSON.*?:/i, '');
+  cleanResponse = cleanResponse.replace(/^Based on.*?:/i, '');
   
   // Try multiple approaches to extract JSON
   const jsonExtractionMethods = [
     // Method 1: Look for JSON block with ```json
     () => {
-      const jsonBlockMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/i);
+      const jsonBlockMatch = cleanResponse.match(/```json\s*([\s\S]*?)\s*```/i);
       return jsonBlockMatch ? jsonBlockMatch[1].trim() : null;
     },
     
     // Method 2: Look for JSON block with ```
     () => {
-      const codeBlockMatch = aiResponse.match(/```\s*([\s\S]*?)\s*```/);
+      const codeBlockMatch = cleanResponse.match(/```\s*([\s\S]*?)\s*```/);
       return codeBlockMatch ? codeBlockMatch[1].trim() : null;
     },
     
-    // Method 3: Look for any JSON-like structure
+    // Method 3: Look for the largest JSON-like structure
     () => {
-      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
-      return jsonMatch ? jsonMatch[0] : null;
-    },
-    
-    // Method 4: Try to find array structures
-    () => {
-      const arrayMatch = aiResponse.match(/\[[\s\S]*\]/);
-      if (arrayMatch) {
-        // If we find an array, try to wrap it in an object
-        try {
-          const arrayContent = JSON.parse(arrayMatch[0]);
-          return JSON.stringify({ suggestions: arrayContent });
-        } catch {
-          return null;
-        }
+      const jsonMatches = cleanResponse.match(/\{[\s\S]*?\}/g);
+      if (jsonMatches && jsonMatches.length > 0) {
+        // Return the longest match (most likely to be complete)
+        return jsonMatches.reduce((longest, current) => 
+          current.length > longest.length ? current : longest
+        );
       }
       return null;
+    },
+    
+    // Method 4: Try to find JSON starting from first { to last }
+    () => {
+      const firstBrace = cleanResponse.indexOf('{');
+      const lastBrace = cleanResponse.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        return cleanResponse.substring(firstBrace, lastBrace + 1);
+      }
+      return null;
+    },
+    
+    // Method 5: Look for specific structure patterns and build JSON
+    () => {
+      // Try to extract arrays for each category
+      const categories = ['voice_search', 'faq_questions', 'headlines', 'featured_snippets', 'long_tail', 'comparisons', 'how_to'];
+      const result = {};
+      let foundAny = false;
+      
+      for (const category of categories) {
+        const pattern = new RegExp(`"${category}"\\s*:\\s*\\[(.*?)\\]`, 'is');
+        const match = cleanResponse.match(pattern);
+        if (match) {
+          try {
+            const arrayContent = `[${match[1]}]`;
+            const parsed = JSON.parse(arrayContent);
+            result[category] = parsed;
+            foundAny = true;
+          } catch (e) {
+            // Try to extract strings manually
+            const items = match[1].split(',').map(item => 
+              item.trim().replace(/^["']|["']$/g, '')
+            ).filter(item => item.length > 0);
+            if (items.length > 0) {
+              result[category] = items;
+              foundAny = true;
+            }
+          }
+        }
+      }
+      
+      // Look for analysis_summary
+      const summaryPattern = /"analysis_summary"\s*:\s*"([^"]*?)"/i;
+      const summaryMatch = cleanResponse.match(summaryPattern);
+      if (summaryMatch) {
+        result['analysis_summary'] = summaryMatch[1];
+        foundAny = true;
+      }
+      
+      return foundAny ? JSON.stringify(result) : null;
     }
   ];
   
@@ -183,7 +234,7 @@ function extractAndParseJSON(aiResponse: string): any {
     try {
       const extractedJson = jsonExtractionMethods[i]();
       if (extractedJson) {
-        console.log(`🎯 Method ${i + 1} extracted: ${extractedJson.substring(0, 200)}...`);
+        console.log(`🎯 Method ${i + 1} extracted: ${extractedJson.substring(0, 300)}...`);
         
         // Clean up the JSON string
         let cleanJson = extractedJson
@@ -192,13 +243,30 @@ function extractAndParseJSON(aiResponse: string): any {
           .replace(/\s*```\s*$/, '')
           .trim();
         
+        // Fix common JSON issues
+        cleanJson = cleanJson
+          .replace(/,\s*}/g, '}')  // Remove trailing commas
+          .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
+          .replace(/([{,]\s*)(\w+):/g, '$1"$2":')  // Quote unquoted keys
+          .replace(/:\s*'([^']*)'/g, ': "$1"');  // Replace single quotes with double quotes
+        
         // Try to parse the JSON
         const parsed = JSON.parse(cleanJson);
         
         // Validate that we have a reasonable structure
         if (typeof parsed === 'object' && parsed !== null) {
-          console.log(`✅ Successfully parsed JSON with method ${i + 1}:`, Object.keys(parsed));
-          return parsed;
+          // Check if we have at least some expected categories
+          const expectedCategories = ['voice_search', 'faq_questions', 'headlines'];
+          const hasExpectedStructure = expectedCategories.some(cat => 
+            parsed[cat] && Array.isArray(parsed[cat]) && parsed[cat].length > 0
+          );
+          
+          if (hasExpectedStructure || Object.keys(parsed).length > 3) {
+            console.log(`✅ Successfully parsed JSON with method ${i + 1}:`, Object.keys(parsed));
+            return parsed;
+          } else {
+            console.warn(`⚠️ Method ${i + 1} parsed but structure seems incomplete:`, Object.keys(parsed));
+          }
         } else {
           console.warn(`⚠️ Method ${i + 1} parsed but not an object`);
         }
@@ -221,7 +289,9 @@ function generateFallbackSuggestions(content: string): any {
       `How does ${contentWords} work?`,
       `Tell me about ${contentWords}`,
       `What are the benefits of ${contentWords}?`,
-      `How can I get started with ${contentWords}?`
+      `How can I get started with ${contentWords}?`,
+      `Is ${contentWords} right for me?`,
+      `Where can I learn more about ${contentWords}?`
     ],
     faq_questions: [
       `What is ${contentWords}?`,
@@ -231,42 +301,58 @@ function generateFallbackSuggestions(content: string): any {
       `How do I get started?`,
       `Is it suitable for my needs?`,
       `What makes it different?`,
-      `How long does it take?`
+      `How long does it take?`,
+      `What support is available?`,
+      `Can I try it first?`
     ],
     headlines: [
       `Complete Guide to ${contentWords}`,
       `Everything You Need to Know About ${contentWords}`,
       `${contentWords}: Benefits and Best Practices`,
       `How to Choose the Right ${contentWords}`,
-      `${contentWords} Explained: A Comprehensive Overview`
+      `${contentWords} Explained: A Comprehensive Overview`,
+      `The Ultimate ${contentWords} Resource`
     ],
     featured_snippets: [
       `What is ${contentWords}?`,
       `How to use ${contentWords}?`,
       `Benefits of ${contentWords}`,
       `${contentWords} vs alternatives`,
-      `Best practices for ${contentWords}`
+      `Best practices for ${contentWords}`,
+      `${contentWords} cost and pricing`,
+      `How ${contentWords} works`,
+      `${contentWords} getting started guide`
     ],
     long_tail: [
       `best ${contentWords} for small business`,
       `how to implement ${contentWords} effectively`,
       `${contentWords} pricing and packages`,
       `${contentWords} reviews and testimonials`,
-      `step by step ${contentWords} guide`
+      `step by step ${contentWords} guide`,
+      `${contentWords} vs competitors comparison`,
+      `affordable ${contentWords} solutions`,
+      `${contentWords} for beginners tutorial`,
+      `professional ${contentWords} services`,
+      `${contentWords} benefits and features`
     ],
     comparisons: [
       `${contentWords} vs competitors`,
       `Which ${contentWords} is best?`,
       `${contentWords} comparison guide`,
-      `Pros and cons of ${contentWords}`
+      `Pros and cons of ${contentWords}`,
+      `${contentWords} alternatives`,
+      `Best ${contentWords} options`
     ],
     how_to: [
       `How to get started with ${contentWords}`,
       `How to choose ${contentWords}`,
       `How to implement ${contentWords}`,
-      `How to optimize ${contentWords}`
+      `How to optimize ${contentWords}`,
+      `How to use ${contentWords} effectively`,
+      `How to evaluate ${contentWords}`,
+      `How to set up ${contentWords}`
     ],
-    analysis_summary: `Generated suggestions based on content analysis. The content appears to focus on ${contentWords}. Consider creating comprehensive content that answers these common questions and queries.`
+    analysis_summary: `Generated comprehensive suggestions based on content analysis. The content appears to focus on ${contentWords}. These suggestions are optimized for AI systems, voice search, and featured snippets to improve visibility and citation potential.`
   };
 }
 
@@ -301,35 +387,35 @@ serve(async (req) => {
     if (contentType) contextInfo += `\nContent Type: ${contentType}`;
     if (siteUrl) contextInfo += `\nWebsite: ${siteUrl}`;
 
-    // Create comprehensive prompt for generating AI-optimized suggestions
-    const prompt = `You are an AI prompt optimization expert. Analyze the following content and generate comprehensive AI-optimized prompt suggestions.
+    // Create comprehensive prompt for generating AI-optimized suggestions with very specific format requirements
+    const prompt = `You are an AI prompt optimization expert. Analyze the content and generate AI-optimized suggestions.
 
 ${contextInfo}
 
-IMPORTANT: Return ONLY a JSON object with the following structure, no other text:
+Generate suggestions in exactly this JSON format with NO additional text before or after:
 
 {
-  "voice_search": [5-7 natural, conversational questions people would ask voice assistants],
-  "faq_questions": [8-10 frequently asked questions that could be answered by this content],
-  "headlines": [5-6 AI-optimized headlines that would attract both users and AI systems],
-  "featured_snippets": [6-8 questions likely to trigger featured snippets in search results],
-  "long_tail": [8-10 specific, longer phrases with high conversion potential],
-  "comparisons": [5-6 comparison-style questions for competitive content],
-  "how_to": [5-7 step-by-step instructional queries for tutorial content],
-  "analysis_summary": "A brief summary of the content analysis and optimization opportunities"
+  "voice_search": ["question 1", "question 2", "question 3", "question 4", "question 5"],
+  "faq_questions": ["question 1", "question 2", "question 3", "question 4", "question 5", "question 6", "question 7", "question 8"],
+  "headlines": ["headline 1", "headline 2", "headline 3", "headline 4", "headline 5"],
+  "featured_snippets": ["snippet question 1", "snippet question 2", "snippet question 3", "snippet question 4", "snippet question 5"],
+  "long_tail": ["long tail 1", "long tail 2", "long tail 3", "long tail 4", "long tail 5", "long tail 6", "long tail 7"],
+  "comparisons": ["comparison 1", "comparison 2", "comparison 3", "comparison 4", "comparison 5"],
+  "how_to": ["how to 1", "how to 2", "how to 3", "how to 4", "how to 5"],
+  "analysis_summary": "Brief summary of the analysis and opportunities"
 }
 
-Focus on:
-1. Natural language patterns used in voice search and AI queries
-2. Questions that would help the content get cited in AI responses
-3. Conversational, question-based formats
-4. Long-tail keywords with commercial intent
-5. Comparison and evaluation queries
-6. How-to and instructional formats
+Requirements:
+- voice_search: Natural conversational questions for voice assistants
+- faq_questions: Common questions that could be answered by this content
+- headlines: AI-optimized headlines for maximum visibility
+- featured_snippets: Questions likely to trigger featured snippets
+- long_tail: Specific longer phrases with commercial intent
+- comparisons: Comparison-style questions for competitive content
+- how_to: Step-by-step instructional queries
+- analysis_summary: Brief analysis summary
 
-Make all suggestions specific to the content provided and optimized for AI understanding and citation.
-
-RETURN ONLY THE JSON OBJECT:`;
+CRITICAL: Return ONLY the JSON object above, no explanatory text, no markdown formatting, just the raw JSON.`;
 
     let suggestions;
     let analysisMethod = 'AI-powered';
