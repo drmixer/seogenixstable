@@ -120,25 +120,16 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('❌ Error in generateSummary function:', error)
     
-    // Always return a 200 response with fallback content to prevent frontend errors
-    const fallbackContent = generateEnhancedTemplate('https://example.com', 'SiteOverview', 'Example Company')
-    const wordCount = fallbackContent.split(/\s+/).filter(word => word.length > 0).length
-    
+    // Return proper error status code instead of always returning 200
     return new Response(
       JSON.stringify({
-        summary: {
-          site_id: 'fallback',
-          summary_type: 'SiteOverview',
-          content: fallbackContent,
-          created_at: new Date().toISOString()
-        },
-        dataSource: 'Fallback Template Generator',
-        wordCount,
-        warning: 'Generated using fallback template due to system error'
+        error: 'Internal server error',
+        message: error.message || 'An unexpected error occurred',
+        timestamp: new Date().toISOString()
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200,
+        status: 500,
       },
     )
   }
