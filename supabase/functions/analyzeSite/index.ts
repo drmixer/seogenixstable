@@ -82,15 +82,42 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     }
 
     const data = await response.json();
-    console.log(`✅ Gemini API response received, candidates: ${data.candidates?.length || 0}`);
+    console.log(`✅ Gemini API response received`);
+    console.log(`📋 Full response structure:`, JSON.stringify(data, null, 2));
     
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-      console.error(`❌ Invalid Gemini API response structure:`, JSON.stringify(data, null, 2));
-      throw new Error('Invalid response from Gemini API');
+    // Handle different possible response structures
+    let responseText = '';
+    
+    if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
+      console.log(`📝 Found candidates array with ${data.candidates.length} items`);
+      const candidate = data.candidates[0];
+      
+      if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
+        responseText = candidate.content.parts[0].text;
+        console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
+      } else {
+        console.error(`❌ Invalid candidate structure:`, JSON.stringify(candidate, null, 2));
+        throw new Error('Invalid candidate structure in Gemini API response');
+      }
+    } else if (data.text) {
+      // Alternative response structure
+      responseText = data.text;
+      console.log(`✅ Successfully extracted text from data.text`);
+    } else if (data.content) {
+      // Another alternative structure
+      responseText = data.content;
+      console.log(`✅ Successfully extracted text from data.content`);
+    } else {
+      console.error(`❌ Unrecognized Gemini API response structure:`, JSON.stringify(data, null, 2));
+      throw new Error('Unrecognized response structure from Gemini API');
     }
 
-    const responseText = data.candidates[0].content.parts[0].text;
+    if (!responseText || responseText.trim().length === 0) {
+      throw new Error('Empty response text from Gemini API');
+    }
+
     console.log(`📝 Gemini response length: ${responseText.length} characters`);
+    console.log(`📝 Response preview: ${responseText.substring(0, 200)}...`);
     
     return responseText;
   } catch (fetchError) {
@@ -279,10 +306,22 @@ Return only a JSON object with these exact keys:
         // Parse the AI response to extract scores
         try {
           // Try to extract JSON from the response
-          const jsonMatch = aiAnalysis.match(/\{[\s\S]*\}/);
+          const jsonMatch = aiAnalysis.match(/\{[\s\S]*?\}/);
           if (jsonMatch) {
-            scores = JSON.parse(jsonMatch[0]);
+            const jsonString = jsonMatch[0];
+            console.log(`🔍 Attempting to parse JSON: ${jsonString}`);
+            scores = JSON.parse(jsonString);
             console.log(`✅ Successfully parsed AI scores:`, scores);
+            
+            // Validate that all required keys are present
+            const requiredKeys = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
+            const missingKeys = requiredKeys.filter(key => !(key in scores));
+            
+            if (missingKeys.length > 0) {
+              console.warn(`⚠️ Missing keys in AI response: ${missingKeys.join(', ')}`);
+              throw new Error(`Missing required keys: ${missingKeys.join(', ')}`);
+            }
+            
             analysisMethod = 'AI-powered (Gemini 2.5 Flash)';
           } else {
             console.warn('❌ No JSON found in AI response, response was:', aiAnalysis);
