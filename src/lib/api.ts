@@ -145,7 +145,37 @@ export const summaryApi = {
 
       if (error) {
         console.error('❌ Edge function error:', error);
-        throw new Error(`Edge function failed: ${error.message}`);
+        
+        // Extract more detailed error information
+        let errorMessage = 'Edge function failed';
+        
+        if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        // If the error has context or details, include them
+        if (error.context) {
+          errorMessage += ` (Context: ${error.context})`;
+        }
+        
+        // If there's a status code, include it
+        if (error.status) {
+          errorMessage += ` (Status: ${error.status})`;
+        }
+        
+        // If there are additional details in the error object
+        if (typeof error === 'object' && error !== null) {
+          const errorDetails = Object.keys(error)
+            .filter(key => !['message', 'context', 'status'].includes(key))
+            .map(key => `${key}: ${error[key]}`)
+            .join(', ');
+          
+          if (errorDetails) {
+            errorMessage += ` (${errorDetails})`;
+          }
+        }
+        
+        throw new Error(errorMessage);
       }
 
       if (!data) {
