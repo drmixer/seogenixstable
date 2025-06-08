@@ -1,50 +1,18 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-Deno.serve(async (req) => {
+serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Read request body as text first
-    const requestBodyText = await req.text()
-    
-    // Check if request body is empty
-    if (!requestBodyText || requestBodyText.trim() === '') {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Empty request body',
-          details: 'Request body cannot be empty'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        },
-      )
-    }
-
-    // Parse JSON with error handling
-    let requestData
-    try {
-      requestData = JSON.parse(requestBodyText)
-    } catch (jsonError) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Invalid JSON in request body',
-          details: `Failed to parse JSON: ${jsonError.message}`
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        },
-      )
-    }
-
-    const { siteId, url, summaryType } = requestData
+    const { siteId, url, summaryType } = await req.json()
 
     if (!siteId || !url || !summaryType) {
       return new Response(
@@ -231,32 +199,20 @@ Write as technical overview in 400-500 words.`
       })
     })
 
-    // Read the response text once and store it
-    const responseText = await response.text()
-
-    // Check if response is ok
     if (!response.ok) {
-      console.error(`❌ Gemini API HTTP error ${response.status}:`, responseText)
-      throw new Error(`Gemini API error: ${response.status} - ${responseText}`)
+      const errorText = await response.text()
+      console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
     }
 
-    // Check content type
     const contentType = response.headers.get('content-type')
     if (!contentType || !contentType.includes('application/json')) {
+      const responseText = await response.text()
       console.error('❌ Gemini API returned non-JSON response:', responseText)
       throw new Error(`Gemini API returned unexpected content type: ${contentType}`)
     }
 
-    let data
-    try {
-      // Parse JSON using the stored response text
-      data = JSON.parse(responseText)
-    } catch (jsonError) {
-      const snippet = responseText.substring(0, 200) + (responseText.length > 200 ? '...' : '')
-      console.error('❌ Failed to parse Gemini API response as JSON:', jsonError)
-      console.error('❌ Response snippet:', snippet)
-      throw new Error(`Invalid JSON response from Gemini API. Response snippet: ${snippet}`)
-    }
+    const data = await response.json()
     
     if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
       return data.candidates[0].content.parts[0].text
