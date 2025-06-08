@@ -135,44 +135,43 @@ export const summaryApi = {
     try {
       console.log('🚀 Calling generateSummary edge function with:', { siteId, url, summaryType });
       
-      // Call the edge function
+      // Validate inputs before making the call
+      if (!siteId || !url || !summaryType) {
+        throw new Error('Missing required parameters: siteId, url, or summaryType');
+      }
+
+      // Prepare the request body
+      const requestBody = {
+        siteId: siteId.trim(),
+        url: url.trim(),
+        summaryType: summaryType.trim()
+      };
+
+      console.log('📤 Request body:', requestBody);
+
+      // Call the edge function with proper error handling
       const { data, error } = await supabase.functions.invoke('generateSummary', {
-        body: { siteId, url, summaryType },
+        body: requestBody,
         headers: {
           'Content-Type': 'application/json',
         }
       });
 
+      console.log('📥 Edge function response:', { data, error });
+
       if (error) {
         console.error('❌ Edge function error:', error);
         
-        // Extract more detailed error information
+        // Try to extract more detailed error information
         let errorMessage = 'Edge function failed';
-        
         if (error.message) {
-          errorMessage = error.message;
+          errorMessage += `: ${error.message}`;
         }
-        
-        // If the error has context or details, include them
-        if (error.context) {
-          errorMessage += ` (Context: ${error.context})`;
+        if (error.details) {
+          errorMessage += ` (${error.details})`;
         }
-        
-        // If there's a status code, include it
-        if (error.status) {
-          errorMessage += ` (Status: ${error.status})`;
-        }
-        
-        // If there are additional details in the error object
-        if (typeof error === 'object' && error !== null) {
-          const errorDetails = Object.keys(error)
-            .filter(key => !['message', 'context', 'status'].includes(key))
-            .map(key => `${key}: ${error[key]}`)
-            .join(', ');
-          
-          if (errorDetails) {
-            errorMessage += ` (${errorDetails})`;
-          }
+        if (error.hint) {
+          errorMessage += ` - ${error.hint}`;
         }
         
         throw new Error(errorMessage);
@@ -185,10 +184,19 @@ export const summaryApi = {
       // Check if the Edge Function returned an error in the response data
       if (data.error) {
         console.error('❌ Edge function returned error:', data.error);
-        throw new Error(`Edge function failed: ${data.error}`);
+        let errorMessage = `Edge function failed: ${data.error}`;
+        if (data.details) {
+          errorMessage += ` - ${data.details}`;
+        }
+        throw new Error(errorMessage);
       }
 
       console.log('✅ Edge function response:', data);
+
+      // Validate the response structure
+      if (!data.summary) {
+        throw new Error('Invalid response: missing summary data');
+      }
 
       // Save the summary to the database
       const { data: savedSummary, error: dbError } = await supabase
@@ -204,8 +212,8 @@ export const summaryApi = {
 
       return {
         summary: savedSummary,
-        dataSource: data.dataSource,
-        wordCount: data.wordCount
+        dataSource: data.dataSource || 'Generated',
+        wordCount: data.wordCount || 0
       };
 
     } catch (error) {

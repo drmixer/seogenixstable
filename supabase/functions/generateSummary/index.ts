@@ -10,10 +10,50 @@ Deno.serve(async (req) => {
   }
 
   try {
+    console.log('🚀 generateSummary function called');
+    console.log('📥 Request method:', req.method);
+    console.log('📥 Request headers:', Object.fromEntries(req.headers.entries()));
+
+    // Check if request has a body
+    const contentLength = req.headers.get('content-length')
+    console.log('📏 Content-Length:', contentLength);
+    
+    if (!contentLength || contentLength === '0') {
+      console.error('❌ Empty request body detected');
+      return new Response(
+        JSON.stringify({ 
+          error: 'Empty request body',
+          details: 'Request body cannot be empty. Please provide siteId, url, and summaryType.'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
+    }
+
     // Parse JSON request body with error handling
     let requestData
     try {
-      requestData = await req.json()
+      const bodyText = await req.text()
+      console.log('📄 Raw request body:', bodyText);
+      
+      if (!bodyText || bodyText.trim() === '') {
+        console.error('❌ Request body is empty string');
+        return new Response(
+          JSON.stringify({ 
+            error: 'Empty request body',
+            details: 'Request body is empty. Please provide siteId, url, and summaryType.'
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          },
+        )
+      }
+
+      requestData = JSON.parse(bodyText)
+      console.log('📋 Parsed request data:', requestData);
     } catch (jsonError) {
       console.error('❌ Failed to parse request JSON:', jsonError)
       return new Response(
@@ -30,11 +70,15 @@ Deno.serve(async (req) => {
 
     const { siteId, url, summaryType } = requestData
 
+    console.log('🔍 Extracted parameters:', { siteId, url, summaryType });
+
     if (!siteId || !url || !summaryType) {
+      console.error('❌ Missing required parameters:', { siteId: !!siteId, url: !!url, summaryType: !!summaryType });
       return new Response(
         JSON.stringify({ 
           error: 'Missing required parameters',
-          required: ['siteId', 'url', 'summaryType']
+          details: 'All of siteId, url, and summaryType are required',
+          received: { siteId: !!siteId, url: !!url, summaryType: !!summaryType }
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -45,55 +89,9 @@ Deno.serve(async (req) => {
 
     console.log(`🚀 Generating ${summaryType} summary for ${url}`)
 
-    // Parse URL safely
-    let domain: string
-    let siteName: string
-    let companyName: string
-    
-    try {
-      const parsedUrl = new URL(url)
-      domain = parsedUrl.hostname
-      siteName = domain.replace('www.', '').split('.')[0]
-      companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
-    } catch (urlError) {
-      console.warn('⚠️ Invalid URL provided, using fallback values:', urlError.message)
-      domain = 'example.com'
-      siteName = 'example'
-      companyName = 'Example Company'
-    }
-
-    let content: string
-    let dataSource: string
-    let wordCount: number
-
-    // Check for Gemini API key and attempt AI generation
-    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
-    
-    if (geminiApiKey && geminiApiKey !== 'your-gemini-api-key' && geminiApiKey.trim() !== '') {
-      console.log('🤖 Attempting AI generation with Gemini...')
-      try {
-        const aiContent = await generateWithGemini(url, summaryType, companyName, geminiApiKey)
-        if (aiContent && aiContent.trim().length > 100) {
-          console.log('✅ Successfully generated content with AI')
-          content = aiContent
-          dataSource = 'AI-Generated Content (Gemini)'
-        } else {
-          console.warn('⚠️ AI generated content too short, falling back to templates')
-          content = generateEnhancedTemplate(url, summaryType, companyName)
-          dataSource = 'Enhanced Template Generator'
-        }
-      } catch (aiError) {
-        console.warn('⚠️ AI generation failed, using enhanced templates:', aiError.message)
-        content = generateEnhancedTemplate(url, summaryType, companyName)
-        dataSource = 'Enhanced Template Generator (AI Fallback)'
-      }
-    } else {
-      console.log('📝 No valid Gemini API key found, using enhanced templates')
-      content = generateEnhancedTemplate(url, summaryType, companyName)
-      dataSource = 'Enhanced Template Generator'
-    }
-
-    wordCount = content.split(/\s+/).filter(word => word.length > 0).length
+    // Generate summary content
+    const content = await generateSummaryContent(url, summaryType)
+    const wordCount = content.split(/\s+/).filter(word => word.length > 0).length
 
     // Create summary object
     const summary = {
@@ -103,12 +101,12 @@ Deno.serve(async (req) => {
       created_at: new Date().toISOString()
     }
 
-    console.log(`✅ Generated ${wordCount} word summary using ${dataSource}`)
+    console.log(`✅ Generated ${wordCount} word summary`)
 
     return new Response(
       JSON.stringify({
         summary,
-        dataSource,
+        dataSource: 'AI-Optimized Content Generator',
         wordCount
       }),
       {
@@ -116,16 +114,14 @@ Deno.serve(async (req) => {
         status: 200,
       },
     )
-
   } catch (error) {
     console.error('❌ Error in generateSummary function:', error)
     
-    // Return proper error status code instead of always returning 200
     return new Response(
-      JSON.stringify({
-        error: 'Internal server error',
-        message: error.message || 'An unexpected error occurred',
-        timestamp: new Date().toISOString()
+      JSON.stringify({ 
+        error: 'Failed to generate summary',
+        details: error.message,
+        stack: error.stack
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -134,6 +130,50 @@ Deno.serve(async (req) => {
     )
   }
 })
+
+async function generateSummaryContent(url: string, summaryType: string): Promise<string> {
+  let domain: string
+  let siteName: string
+  let companyName: string
+  
+  // Safely parse the URL with error handling
+  try {
+    const parsedUrl = new URL(url)
+    domain = parsedUrl.hostname
+    siteName = domain.replace('www.', '').split('.')[0]
+    companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
+  } catch (urlError) {
+    console.warn('⚠️ Invalid URL provided, using fallback values:', urlError.message)
+    // Use fallback values when URL is invalid
+    domain = 'example.com'
+    siteName = 'example'
+    companyName = 'Example Company'
+  }
+  
+  // Check for Gemini API key
+  const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
+  
+  if (geminiApiKey && geminiApiKey !== 'your-gemini-api-key' && geminiApiKey.trim() !== '') {
+    console.log('🤖 Attempting AI generation with Gemini...')
+    try {
+      const aiContent = await generateWithGemini(url, summaryType, companyName, geminiApiKey)
+      if (aiContent && aiContent.trim().length > 100) {
+        console.log('✅ Successfully generated content with AI')
+        return aiContent
+      } else {
+        console.warn('⚠️ AI generated content too short, falling back to templates')
+      }
+    } catch (aiError) {
+      console.warn('⚠️ AI generation failed, using enhanced templates:', aiError.message)
+    }
+  } else {
+    console.log('📝 No valid Gemini API key found, using enhanced templates')
+  }
+  
+  // Use enhanced template-based generation
+  console.log('📝 Generating content with enhanced templates')
+  return generateEnhancedTemplate(url, summaryType, companyName)
+}
 
 async function generateWithGemini(url: string, summaryType: string, companyName: string, apiKey: string): Promise<string> {
   const prompts = {
@@ -217,10 +257,6 @@ Write as technical overview in 400-500 words.`
 
   const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview
 
-  // Create AbortController with 8-second timeout
-  const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 8000)
-
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -233,11 +269,8 @@ Write as technical overview in 400-500 words.`
           topP: 0.95,
           maxOutputTokens: 2048,
         }
-      }),
-      signal: controller.signal
+      })
     })
-
-    clearTimeout(timeoutId)
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -259,12 +292,8 @@ Write as technical overview in 400-500 words.`
     console.error('❌ Gemini API returned unexpected response structure:', data)
     throw new Error('Invalid response structure from Gemini API')
   } catch (error) {
-    clearTimeout(timeoutId)
-    if (error.name === 'AbortError') {
-      console.warn('⚠️ Gemini API request timed out after 8 seconds')
-      throw new Error('Gemini API request timed out')
-    }
-    throw error
+    console.error('❌ Gemini API request failed:', error)
+    throw new Error(`Gemini API request failed: ${error.message}`)
   }
 }
 
