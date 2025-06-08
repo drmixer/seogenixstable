@@ -46,8 +46,8 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     throw new Error('GEMINI_API_KEY environment variable is not set. Please configure this in your Supabase project settings.');
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
-  console.log(`🌐 Making request to Gemini 2.0 Flash Experimental`);
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+  console.log(`🌐 Making request to Gemini 2.5 Flash Preview`);
 
   const requestBody = {
     contents: [{
@@ -267,7 +267,7 @@ serve(async (req) => {
     }
 
     let scores;
-    let analysisMethod = 'AI-powered (Gemini 2.0 Flash)';
+    let analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
 
     // Check if Gemini API key is available and try to use it
     const apiKey = Deno.env.get('GEMINI_API_KEY');
@@ -275,7 +275,7 @@ serve(async (req) => {
     
     if (apiKey && apiKey.trim().length > 0) {
       try {
-        console.log(`🤖 Attempting AI analysis with Gemini 2.0 Flash Experimental`);
+        console.log(`🤖 Attempting AI analysis with Gemini 2.5 Flash Preview`);
         
         // Prepare a more structured prompt for better JSON response
         const analysisPrompt = `You are an AI visibility analysis expert. Analyze this website and provide scores from 1-100 for each category.
@@ -344,8 +344,8 @@ Respond with ONLY a valid JSON object in this exact format:
             throw new Error(`Missing or invalid required keys: ${missingKeys.join(', ')}`);
           }
           
-          analysisMethod = 'AI-powered (Gemini 2.0 Flash)';
-          console.log(`✅ AI analysis successful with Gemini 2.0 Flash`);
+          analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
+          console.log(`✅ AI analysis successful with Gemini 2.5 Flash Preview`);
           
         } catch (parseError) {
           console.error('❌ Failed to parse AI analysis:', parseError);
