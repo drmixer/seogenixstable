@@ -35,7 +35,7 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with improved response handling
+// Helper function to call Gemini API with comprehensive error handling
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
@@ -59,7 +59,25 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       topK: 40,
       topP: 0.95,
       maxOutputTokens: 2048,
-    }
+    },
+    safetySettings: [
+      {
+        category: "HARM_CATEGORY_HARASSMENT",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_HATE_SPEECH", 
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold: "BLOCK_NONE"
+      }
+    ]
   };
 
   console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters`);
@@ -83,15 +101,16 @@ async function callGeminiAPI(prompt: string): Promise<string> {
 
     const data = await response.json();
     console.log(`✅ Gemini API response received`);
-    console.log(`📋 Full response structure:`, JSON.stringify(data, null, 2));
+    console.log(`📋 Response structure keys:`, Object.keys(data));
     
-    // Handle different possible response structures with improved logic
+    // Enhanced response handling with multiple fallback methods
     let responseText = '';
     
     // Method 1: Standard candidates structure
     if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
       console.log(`📝 Found candidates array with ${data.candidates.length} items`);
       const candidate = data.candidates[0];
+      console.log(`📋 Candidate structure:`, Object.keys(candidate));
       
       if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
         responseText = candidate.content.parts[0].text;
@@ -102,31 +121,56 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       } else if (candidate.output) {
         responseText = candidate.output;
         console.log(`✅ Successfully extracted text from candidates[0].output`);
+      } else if (candidate.message) {
+        responseText = candidate.message;
+        console.log(`✅ Successfully extracted text from candidates[0].message`);
       } else {
-        console.error(`❌ Invalid candidate structure:`, JSON.stringify(candidate, null, 2));
-        throw new Error('Invalid candidate structure in Gemini API response');
+        // Log the full candidate structure for debugging
+        console.error(`❌ Unexpected candidate structure:`, JSON.stringify(candidate, null, 2));
+        
+        // Try to find any text-like property in the candidate
+        const textProps = ['response', 'result', 'generated_text', 'completion'];
+        let found = false;
+        for (const prop of textProps) {
+          if (candidate[prop] && typeof candidate[prop] === 'string') {
+            responseText = candidate[prop];
+            console.log(`✅ Successfully extracted text from candidates[0].${prop}`);
+            found = true;
+            break;
+          }
+        }
+        
+        if (!found) {
+          throw new Error(`Invalid candidate structure in Gemini API response. Available keys: ${Object.keys(candidate).join(', ')}`);
+        }
       }
     } 
+    // Method 2: Direct text property
     else if (data.text) {
       responseText = data.text;
       console.log(`✅ Successfully extracted text from data.text`);
     } 
+    // Method 3: Content property
     else if (data.content) {
       responseText = data.content;
       console.log(`✅ Successfully extracted text from data.content`);
     }
+    // Method 4: Output property
     else if (data.output) {
       responseText = data.output;
       console.log(`✅ Successfully extracted text from data.output`);
     }
+    // Method 5: Response property
     else if (data.response) {
       responseText = data.response;
       console.log(`✅ Successfully extracted text from data.response`);
     }
+    // Method 6: Check if data itself is a string
     else if (typeof data === 'string') {
       responseText = data;
       console.log(`✅ Successfully extracted text from data (string)`);
     }
+    // Method 7: Look for any text-like property
     else {
       const textProperties = ['message', 'result', 'generated_text', 'completion'];
       let found = false;
@@ -141,8 +185,9 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       }
       
       if (!found) {
-        console.error(`❌ Unrecognized Gemini API response structure:`, JSON.stringify(data, null, 2));
-        throw new Error('Unrecognized response structure from Gemini API');
+        console.error(`❌ Unrecognized Gemini API response structure. Available keys:`, Object.keys(data));
+        console.error(`❌ Full response:`, JSON.stringify(data, null, 2));
+        throw new Error(`Unrecognized response structure from Gemini API. Available keys: ${Object.keys(data).join(', ')}`);
       }
     }
 
@@ -160,7 +205,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   }
 }
 
-// Helper function to extract and parse JSON from AI response
+// Helper function to extract and parse JSON from AI response with enhanced error handling
 function extractAndParseJSON(aiResponse: string): any {
   console.log(`🔍 Attempting to extract JSON from AI response: ${aiResponse.substring(0, 300)}...`);
   
@@ -168,11 +213,19 @@ function extractAndParseJSON(aiResponse: string): any {
   let cleanResponse = aiResponse.trim();
   
   // Remove common prefixes that might interfere
-  cleanResponse = cleanResponse.replace(/^Here's the JSON.*?:/i, '');
-  cleanResponse = cleanResponse.replace(/^Here is the JSON.*?:/i, '');
-  cleanResponse = cleanResponse.replace(/^The JSON.*?:/i, '');
-  cleanResponse = cleanResponse.replace(/^JSON.*?:/i, '');
-  cleanResponse = cleanResponse.replace(/^Based on.*?:/i, '');
+  const prefixPatterns = [
+    /^Here's the JSON.*?:/i,
+    /^Here is the JSON.*?:/i,
+    /^The JSON.*?:/i,
+    /^JSON.*?:/i,
+    /^Based on.*?:/i,
+    /^Analysis.*?:/i,
+    /^Entity.*?:/i
+  ];
+  
+  prefixPatterns.forEach(pattern => {
+    cleanResponse = cleanResponse.replace(pattern, '');
+  });
   
   // Try multiple approaches to extract JSON
   const jsonExtractionMethods = [
@@ -207,6 +260,29 @@ function extractAndParseJSON(aiResponse: string): any {
         return cleanResponse.substring(firstBrace, lastBrace + 1);
       }
       return null;
+    },
+    
+    // Method 5: Look for entities array and build JSON structure
+    () => {
+      const entitiesMatch = cleanResponse.match(/"entities"\s*:\s*\[([\s\S]*?)\]/i);
+      if (entitiesMatch) {
+        try {
+          const entitiesArray = JSON.parse(`[${entitiesMatch[1]}]`);
+          const summaryMatch = cleanResponse.match(/"analysis_summary"\s*:\s*"([^"]*?)"/i);
+          const totalMatch = cleanResponse.match(/"total_entities"\s*:\s*(\d+)/i);
+          const scoreMatch = cleanResponse.match(/"coverage_score"\s*:\s*(\d+)/i);
+          
+          return JSON.stringify({
+            entities: entitiesArray,
+            analysis_summary: summaryMatch ? summaryMatch[1] : "Entity analysis completed",
+            total_entities: totalMatch ? parseInt(totalMatch[1]) : entitiesArray.length,
+            coverage_score: scoreMatch ? parseInt(scoreMatch[1]) : 75
+          });
+        } catch (e) {
+          return null;
+        }
+      }
+      return null;
     }
   ];
   
@@ -235,8 +311,14 @@ function extractAndParseJSON(aiResponse: string): any {
         
         // Validate that we have a reasonable structure
         if (typeof parsed === 'object' && parsed !== null) {
-          console.log(`✅ Successfully parsed JSON with method ${i + 1}:`, Object.keys(parsed));
-          return parsed;
+          // Check if we have entities array
+          if (parsed.entities && Array.isArray(parsed.entities)) {
+            console.log(`✅ Successfully parsed JSON with method ${i + 1}: ${parsed.entities.length} entities found`);
+            return parsed;
+          } else if (Object.keys(parsed).length > 0) {
+            console.log(`✅ Successfully parsed JSON with method ${i + 1}:`, Object.keys(parsed));
+            return parsed;
+          }
         }
       }
     } catch (error) {
@@ -248,7 +330,7 @@ function extractAndParseJSON(aiResponse: string): any {
 }
 
 // Helper function to generate fallback entity analysis
-function generateFallbackEntityAnalysis(url: string, content: string): any {
+function generateFallbackEntityAnalysis(url: string, content: string, siteId: string): any {
   const domain = new URL(url).hostname;
   const siteName = domain.replace('www.', '').split('.')[0];
   const capitalizedSiteName = siteName.charAt(0).toUpperCase() + siteName.slice(1);
@@ -257,27 +339,39 @@ function generateFallbackEntityAnalysis(url: string, content: string): any {
   const contentLower = content.toLowerCase();
   const entities = [];
   
-  // Business-related entities
+  // Business-related entities with smarter detection
   const businessEntities = [
-    { name: capitalizedSiteName, type: 'Organization', importance: 'high' },
-    { name: 'Professional Services', type: 'Service Category', importance: 'high' },
-    { name: 'Business Solutions', type: 'Service Category', importance: 'medium' },
-    { name: 'Customer Support', type: 'Service Feature', importance: 'medium' },
-    { name: 'Quality Assurance', type: 'Process', importance: 'medium' },
-    { name: 'Project Management', type: 'Service Feature', importance: 'medium' },
-    { name: 'Consultation', type: 'Service Type', importance: 'high' },
-    { name: 'Implementation', type: 'Process', importance: 'medium' },
-    { name: 'Training', type: 'Service Feature', importance: 'low' },
-    { name: 'Maintenance', type: 'Service Feature', importance: 'low' }
+    { name: capitalizedSiteName, type: 'Organization', importance: 'high', keywords: [siteName.toLowerCase(), capitalizedSiteName.toLowerCase()] },
+    { name: 'Professional Services', type: 'Service Category', importance: 'high', keywords: ['service', 'professional', 'solution'] },
+    { name: 'Business Solutions', type: 'Service Category', importance: 'medium', keywords: ['business', 'solution', 'enterprise'] },
+    { name: 'Customer Support', type: 'Service Feature', importance: 'medium', keywords: ['support', 'customer', 'help'] },
+    { name: 'Quality Assurance', type: 'Process', importance: 'medium', keywords: ['quality', 'assurance', 'testing'] },
+    { name: 'Project Management', type: 'Service Feature', importance: 'medium', keywords: ['project', 'management', 'planning'] },
+    { name: 'Consultation', type: 'Service Type', importance: 'high', keywords: ['consult', 'advice', 'expert'] },
+    { name: 'Implementation', type: 'Process', importance: 'medium', keywords: ['implement', 'deploy', 'setup'] },
+    { name: 'Training', type: 'Service Feature', importance: 'low', keywords: ['training', 'education', 'learning'] },
+    { name: 'Maintenance', type: 'Service Feature', importance: 'low', keywords: ['maintenance', 'support', 'upkeep'] },
+    { name: 'Technology', type: 'Concept', importance: 'medium', keywords: ['technology', 'tech', 'digital'] },
+    { name: 'Innovation', type: 'Concept', importance: 'low', keywords: ['innovation', 'innovative', 'cutting-edge'] }
   ];
   
   // Check which entities are mentioned in the content
   businessEntities.forEach(entity => {
-    const mentions = (content.match(new RegExp(entity.name, 'gi')) || []).length;
-    const gap = mentions < (entity.importance === 'high' ? 3 : entity.importance === 'medium' ? 2 : 1);
+    let mentions = 0;
+    
+    // Count mentions based on keywords
+    entity.keywords.forEach(keyword => {
+      const regex = new RegExp(keyword, 'gi');
+      const matches = content.match(regex) || [];
+      mentions += matches.length;
+    });
+    
+    // Determine if there's a gap based on importance and mention count
+    const expectedMentions = entity.importance === 'high' ? 3 : entity.importance === 'medium' ? 2 : 1;
+    const gap = mentions < expectedMentions;
     
     entities.push({
-      site_id: '', // Will be filled by the caller
+      site_id: siteId,
       entity_name: entity.name,
       entity_type: entity.type,
       mention_count: mentions,
@@ -286,11 +380,14 @@ function generateFallbackEntityAnalysis(url: string, content: string): any {
     });
   });
   
+  const entitiesWithGoodCoverage = entities.filter(e => !e.gap);
+  const coverageScore = Math.round((entitiesWithGoodCoverage.length / entities.length) * 100);
+  
   return {
     entities: entities,
-    analysis_summary: `Entity coverage analysis completed for ${capitalizedSiteName}. Found ${entities.filter(e => !e.gap).length} well-covered entities and ${entities.filter(e => e.gap).length} entities with coverage gaps. Focus on improving coverage for high-importance entities to enhance AI understanding.`,
+    analysis_summary: `Entity coverage analysis completed for ${capitalizedSiteName}. Found ${entitiesWithGoodCoverage.length} well-covered entities and ${entities.filter(e => e.gap).length} entities with coverage gaps. Focus on improving coverage for high-importance entities to enhance AI understanding.`,
     total_entities: entities.length,
-    coverage_score: Math.round((entities.filter(e => !e.gap).length / entities.length) * 100)
+    coverage_score: coverageScore
   };
 }
 
@@ -388,7 +485,7 @@ serve(async (req) => {
       try {
         console.log(`🤖 Attempting AI entity analysis with Gemini API`);
         
-        // Prepare the prompt for AI entity analysis
+        // Prepare the prompt for AI entity analysis with very specific instructions
         const analysisPrompt = `You are an entity coverage expert. Analyze this website content and identify key entities with their coverage levels.
 
 Website URL: ${url}
@@ -396,7 +493,7 @@ Title: ${metadata.title || 'Not available'}
 Meta Description: ${metadata.description || 'Not available'}
 Content: ${websiteContent}
 
-Analyze the content and identify important entities (people, organizations, concepts, technologies, services, products, locations, etc.) that are relevant to this business/website.
+Analyze the content and identify 8-12 important entities (people, organizations, concepts, technologies, services, products, locations, etc.) that are relevant to this business/website.
 
 For each entity, determine:
 1. Entity name
@@ -404,31 +501,25 @@ For each entity, determine:
 3. Mention count (how many times it appears in the content)
 4. Whether there's a coverage gap (true if mentioned less than expected for its importance)
 
-Return ONLY a JSON object with this exact structure:
+CRITICAL: Return ONLY this JSON object with NO additional text:
 
 {
   "entities": [
     {
       "entity_name": "Entity Name",
-      "entity_type": "Entity Type",
-      "mention_count": number,
-      "gap": boolean
+      "entity_type": "Entity Type", 
+      "mention_count": 5,
+      "gap": false
     }
   ],
   "analysis_summary": "Brief summary of the entity coverage analysis",
-  "total_entities": number,
-  "coverage_score": number (1-100)
+  "total_entities": 10,
+  "coverage_score": 75
 }
 
-Focus on:
-- Business/organization entities
-- Service/product entities
-- Technology/concept entities
-- Industry-specific entities
-- Geographic entities if relevant
-- Key people/roles if mentioned
+Focus on business/organization entities, service/product entities, technology/concept entities, and industry-specific entities.
 
-IMPORTANT: Return ONLY the JSON object, no other text.`;
+IMPORTANT: Return ONLY the JSON object above, no explanatory text, no markdown formatting.`;
 
         console.log(`🤖 Calling Gemini API for entity analysis`);
         
@@ -440,7 +531,7 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
         // Parse the AI response to extract entity data
         try {
           const parsedResult = extractAndParseJSON(aiAnalysis);
-          console.log(`✅ Successfully parsed AI entity analysis:`, parsedResult);
+          console.log(`✅ Successfully parsed AI entity analysis`);
           
           // Add siteId to each entity and ensure proper structure
           if (parsedResult.entities && Array.isArray(parsedResult.entities)) {
@@ -449,12 +540,21 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
               entity_name: entity.entity_name || 'Unknown Entity',
               entity_type: entity.entity_type || 'Unknown',
               mention_count: entity.mention_count || 0,
-              gap: entity.gap || false,
+              gap: entity.gap !== undefined ? entity.gap : false,
               created_at: new Date().toISOString()
             }));
+          } else {
+            throw new Error('No entities array found in AI response');
           }
           
-          analysisResult = parsedResult;
+          // Ensure we have all required fields
+          analysisResult = {
+            entities: parsedResult.entities,
+            analysis_summary: parsedResult.analysis_summary || 'Entity analysis completed successfully',
+            total_entities: parsedResult.total_entities || parsedResult.entities.length,
+            coverage_score: parsedResult.coverage_score || 75
+          };
+          
           analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
         } catch (parseError) {
           console.error('❌ Failed to parse AI entity analysis:', parseError);
@@ -465,22 +565,12 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
         console.error(`❌ AI entity analysis failed with error:`, aiError);
         console.log(`🔄 Falling back to rule-based entity analysis`);
         
-        analysisResult = generateFallbackEntityAnalysis(url, websiteContent);
-        // Add siteId to entities
-        analysisResult.entities = analysisResult.entities.map(entity => ({
-          ...entity,
-          site_id: siteId
-        }));
+        analysisResult = generateFallbackEntityAnalysis(url, websiteContent, siteId);
         analysisMethod = `Rule-based (AI failed: ${aiError.message})`;
       }
     } else {
       console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based entity analysis`);
-      analysisResult = generateFallbackEntityAnalysis(url, websiteContent);
-      // Add siteId to entities
-      analysisResult.entities = analysisResult.entities.map(entity => ({
-        ...entity,
-        site_id: siteId
-      }));
+      analysisResult = generateFallbackEntityAnalysis(url, websiteContent, siteId);
       analysisMethod = 'Rule-based (API key not configured)';
     }
 
@@ -490,8 +580,8 @@ IMPORTANT: Return ONLY the JSON object, no other text.`;
     const responseData = {
       entities: analysisResult.entities,
       analysis_summary: analysisResult.analysis_summary,
-      total_entities: analysisResult.total_entities || analysisResult.entities.length,
-      coverage_score: analysisResult.coverage_score || 75,
+      total_entities: analysisResult.total_entities,
+      coverage_score: analysisResult.coverage_score,
       analysis_method: analysisMethod,
       success: true
     };
