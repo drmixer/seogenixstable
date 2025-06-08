@@ -23,7 +23,7 @@ interface Citation {
 
 const CitationTracker = () => {
   const { isFeatureEnabled, canTrackMoreCitations } = useSubscription();
-  const { sites } = useSites();
+  const { selectedSite, sites } = useSites();
   const [isChecking, setIsChecking] = useState(false);
   const [citations, setCitations] = useState<Citation[]>([]);
   const [assistantResponse, setAssistantResponse] = useState('');
@@ -43,35 +43,36 @@ const CitationTracker = () => {
     );
   }
 
-  // Load existing citations on component mount
+  // Load existing citations for the selected site only
   useEffect(() => {
     const loadExistingCitations = async () => {
-      if (sites.length === 0) return;
+      if (!selectedSite) {
+        setCitations([]);
+        return;
+      }
 
       try {
-        // Load citations for all sites
-        const allCitations: Citation[] = [];
-        for (const site of sites) {
-          const siteCitations = await citationApi.getCitations(site.id);
-          allCitations.push(...siteCitations);
-        }
-        setCitations(allCitations);
+        console.log(`🔍 Loading citations for selected site: ${selectedSite.name}`);
+        const siteCitations = await citationApi.getCitations(selectedSite.id);
+        setCitations(siteCitations);
+        console.log(`✅ Loaded ${siteCitations.length} citations for ${selectedSite.name}`);
       } catch (error) {
         console.error('Error loading existing citations:', error);
+        setCitations([]);
       }
     };
 
     loadExistingCitations();
-  }, [sites]);
+  }, [selectedSite]);
 
   const handleCheckCitations = async () => {
-    if (!canTrackMoreCitations()) {
-      toast.error(`You've reached your monthly citation tracking limit. Upgrade to track more citations.`);
+    if (!selectedSite) {
+      toast.error('Please select a site first');
       return;
     }
 
-    if (sites.length === 0) {
-      toast.error('Please add a site first');
+    if (!canTrackMoreCitations()) {
+      toast.error(`You've reached your monthly citation tracking limit. Upgrade to track more citations.`);
       return;
     }
     
@@ -79,60 +80,36 @@ const CitationTracker = () => {
     setSearchSummary(null);
     
     try {
-      console.log('🚀 Starting citation check for all sites...');
+      console.log(`🚀 Starting citation check for selected site: ${selectedSite.name}`);
       
-      const allResults = [];
+      const result = await citationApi.trackCitations(selectedSite.id, selectedSite.url);
       
-      // Check citations for each site
-      for (const site of sites) {
-        console.log(`🔍 Checking citations for ${site.name}...`);
-        
-        try {
-          const result = await citationApi.trackCitations(site.id, site.url);
-          allResults.push(result);
-          
-          // Update assistant response with the first one that has content
-          if (result.assistant_response && !assistantResponse) {
-            setAssistantResponse(result.assistant_response);
-          }
-          
-          // Update search summary
-          if (result.search_summary) {
-            setSearchSummary(result.search_summary);
-          }
-          
-          console.log(`✅ Found ${result.new_citations_found} new citations for ${site.name}`);
-        } catch (siteError) {
-          console.error(`❌ Error checking citations for ${site.name}:`, siteError);
-          toast.error(`Failed to check citations for ${site.name}`);
-        }
+      // Update assistant response
+      if (result.assistant_response) {
+        setAssistantResponse(result.assistant_response);
       }
       
-      // Reload all citations to get the updated list
-      const allCitations: Citation[] = [];
-      for (const site of sites) {
-        try {
-          const siteCitations = await citationApi.getCitations(site.id);
-          allCitations.push(...siteCitations);
-        } catch (error) {
-          console.error(`Error loading citations for ${site.name}:`, error);
-        }
+      // Update search summary
+      if (result.search_summary) {
+        setSearchSummary(result.search_summary);
       }
       
-      setCitations(allCitations);
+      console.log(`✅ Found ${result.new_citations_found} new citations for ${selectedSite.name}`);
+      
+      // Reload citations for the selected site to get the updated list
+      const updatedCitations = await citationApi.getCitations(selectedSite.id);
+      setCitations(updatedCitations);
       setLastSearchTime(new Date().toISOString());
       
-      const totalNewCitations = allResults.reduce((sum, result) => sum + (result.new_citations_found || 0), 0);
-      
-      if (totalNewCitations > 0) {
-        toast.success(`Found ${totalNewCitations} new citations!`);
+      if (result.new_citations_found > 0) {
+        toast.success(`Found ${result.new_citations_found} new citations for ${selectedSite.name}!`);
       } else {
-        toast.success('Citation check completed - no new citations found');
+        toast.success(`Citation check completed for ${selectedSite.name} - no new citations found`);
       }
       
     } catch (error) {
       console.error('❌ Citation check failed:', error);
-      toast.error('Failed to check citations');
+      toast.error(`Failed to check citations for ${selectedSite.name}`);
     } finally {
       setIsChecking(false);
     }
@@ -147,21 +124,6 @@ const CitationTracker = () => {
     });
   };
 
-  const groupCitationsBySite = () => {
-    const grouped: { [siteId: string]: Citation[] } = {};
-    
-    citations.forEach(citation => {
-      if (!grouped[citation.site_id]) {
-        grouped[citation.site_id] = [];
-      }
-      grouped[citation.site_id].push(citation);
-    });
-    
-    return grouped;
-  };
-
-  const groupedCitations = groupCitationsBySite();
-
   return (
     <AppLayout>
       <motion.div
@@ -174,12 +136,17 @@ const CitationTracker = () => {
           <p className="mt-2 text-gray-600">
             Monitor when and where AI systems cite your content in their responses.
           </p>
+          {selectedSite && (
+            <div className="mt-2 text-sm text-gray-500">
+              Tracking citations for: <span className="font-medium text-gray-700">{selectedSite.name}</span>
+            </div>
+          )}
         </div>
 
-        {sites.length === 0 ? (
+        {!selectedSite ? (
           <EmptyState
-            title="No sites to track"
-            description="Add a site to start tracking AI citations."
+            title="No site selected"
+            description="Please select a site from the site selector to start tracking AI citations."
             icon={<Link2 size={24} />}
             actionLabel="Add Your First Site"
             onAction={() => window.location.href = '/add-site'}
@@ -192,7 +159,7 @@ const CitationTracker = () => {
                 <div className="mb-4 sm:mb-0">
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Citation Search</h3>
                   <p className="text-sm text-gray-500">
-                    Search across Google, News, and Reddit for citations of your content.
+                    Search across Google, News, and Reddit for citations of {selectedSite.name}.
                     {lastSearchTime && (
                       <span className="block mt-1">
                         Last search: {formatDate(lastSearchTime)}
@@ -245,75 +212,63 @@ const CitationTracker = () => {
 
             {/* Citations Results */}
             {citations.length > 0 ? (
-              <div className="space-y-6">
-                {sites.map((site) => {
-                  const siteCitations = groupedCitations[site.id] || [];
-                  
-                  return (
-                    <Card key={site.id} title={site.name}>
-                      <div className="mb-4">
+              <Card title={`Citations for ${selectedSite.name}`}>
+                <div className="mb-4">
+                  <a 
+                    href={selectedSite.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-sm text-gray-500 hover:text-indigo-600 transition-colors flex items-center"
+                  >
+                    {selectedSite.url}
+                    <ExternalLink size={14} className="ml-1" />
+                  </a>
+                </div>
+                
+                <div className="space-y-4">
+                  {citations.map((citation) => (
+                    <div key={citation.id} className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                          {citation.source_type}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {formatDate(citation.detected_at)}
+                        </span>
+                      </div>
+                      <blockquote className="mt-2 text-gray-700 italic border-l-4 border-indigo-300 pl-4 py-1">
+                        {citation.snippet_text}
+                      </blockquote>
+                      <div className="mt-2">
                         <a 
-                          href={site.url}
+                          href={citation.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-sm text-gray-500 hover:text-indigo-600 transition-colors flex items-center"
+                          className="text-sm text-indigo-600 hover:text-indigo-800 transition-colors flex items-center"
                         >
-                          {site.url}
+                          View Source
                           <ExternalLink size={14} className="ml-1" />
                         </a>
                       </div>
-                      
-                      {siteCitations.length > 0 ? (
-                        <div className="space-y-4">
-                          {siteCitations.map((citation) => (
-                            <div key={citation.id} className="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                              <div className="flex justify-between items-start mb-2">
-                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                                  {citation.source_type}
-                                </span>
-                                <span className="text-sm text-gray-500">
-                                  {formatDate(citation.detected_at)}
-                                </span>
-                              </div>
-                              <blockquote className="mt-2 text-gray-700 italic border-l-4 border-indigo-300 pl-4 py-1">
-                                {citation.snippet_text}
-                              </blockquote>
-                              <div className="mt-2">
-                                <a 
-                                  href={citation.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-indigo-600 hover:text-indigo-800 transition-colors flex items-center"
-                                >
-                                  View Source
-                                  <ExternalLink size={14} className="ml-1" />
-                                </a>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-gray-500">No citations found for this site yet.</p>
-                      )}
-                      
-                      <div className="mt-4">
-                        <Link to={`/sites/${site.id}`}>
-                          <Button variant="outline" size="sm">
-                            View Site Details
-                          </Button>
-                        </Link>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
+                    </div>
+                  ))}
+                </div>
+                
+                <div className="mt-4">
+                  <Link to={`/sites/${selectedSite.id}`}>
+                    <Button variant="outline" size="sm">
+                      View Site Details
+                    </Button>
+                  </Link>
+                </div>
+              </Card>
             ) : (
               <Card>
                 <div className="text-center py-8">
                   <Link2 className="h-12 w-12 text-indigo-500 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">No Citations Found Yet</h3>
                   <p className="text-gray-500 max-w-md mx-auto mb-6">
-                    We'll search across Google, News, and Reddit to find where your content is being cited by AI systems and other sources.
+                    We'll search across Google, News, and Reddit to find where {selectedSite.name} is being cited by AI systems and other sources.
                   </p>
                   <Button
                     variant="primary"
