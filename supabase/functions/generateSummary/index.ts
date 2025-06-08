@@ -12,7 +12,41 @@ serve(async (req) => {
   }
 
   try {
-    const { siteId, url, summaryType } = await req.json()
+    // Read the raw request body first
+    const rawBody = await req.text()
+    
+    // Check if the body is empty
+    if (!rawBody || rawBody.trim() === '') {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Empty request body',
+          details: 'Request body cannot be empty'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
+    }
+
+    // Parse the JSON with proper error handling
+    let requestData
+    try {
+      requestData = JSON.parse(rawBody)
+    } catch (parseError) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid JSON in request body',
+          details: `Failed to parse JSON: ${parseError.message}`
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
+    }
+
+    const { siteId, url, summaryType } = requestData
 
     if (!siteId || !url || !summaryType) {
       return new Response(
