@@ -149,9 +149,9 @@ export const summaryApi = {
 
       console.log('📤 Request body:', requestBody);
 
-      // Call the edge function with explicit JSON stringification
+      // Call the edge function - remove JSON.stringify as invoke handles it automatically
       const { data, error } = await supabase.functions.invoke('generateSummary', {
-        body: JSON.stringify(requestBody),
+        body: requestBody,
         headers: {
           'Content-Type': 'application/json',
         }
