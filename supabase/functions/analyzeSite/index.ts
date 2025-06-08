@@ -35,10 +35,11 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with proper error handling
+// Helper function to call Gemini API with detailed logging
 async function callGeminiAPI(prompt: string): Promise<string> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY');
+  console.log(`🔑 Starting Gemini API call...`);
   
+  const apiKey = Deno.env.get('GEMINI_API_KEY');
   console.log(`🔑 API Key check: ${apiKey ? `Present (${apiKey.substring(0, 10)}...)` : 'NOT FOUND'}`);
   
   if (!apiKey) {
@@ -65,6 +66,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters`);
 
   try {
+    console.log(`📡 Sending request to Gemini API...`);
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -73,7 +75,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       body: JSON.stringify(requestBody)
     });
 
-    console.log(`📥 Response status: ${response.status} ${response.statusText}`);
+    console.log(`📥 Response received - Status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -82,15 +84,18 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     }
 
     const data = await response.json();
-    console.log(`✅ Gemini API response received successfully`);
+    console.log(`✅ Gemini API response parsed successfully`);
+    console.log(`📋 Response structure check - has candidates: ${!!data.candidates}, candidates length: ${data.candidates?.length || 0}`);
     
     // Handle the response structure properly
     if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
       const candidate = data.candidates[0];
+      console.log(`📝 Candidate structure check - has content: ${!!candidate.content}, has parts: ${!!candidate.content?.parts}`);
       
       if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
         const responseText = candidate.content.parts[0].text;
         console.log(`✅ Successfully extracted text from Gemini response (${responseText.length} chars)`);
+        console.log(`📝 Response preview: ${responseText.substring(0, 200)}...`);
         return responseText;
       } else {
         console.error(`❌ Invalid candidate structure:`, JSON.stringify(candidate, null, 2));
@@ -102,6 +107,11 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     }
   } catch (fetchError) {
     console.error(`❌ Fetch error calling Gemini API:`, fetchError);
+    console.error(`❌ Error details:`, {
+      name: fetchError.name,
+      message: fetchError.message,
+      stack: fetchError.stack
+    });
     throw fetchError;
   }
 }
@@ -247,7 +257,7 @@ serve(async (req) => {
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     console.log(`🔑 Environment check - GEMINI_API_KEY: ${apiKey ? 'PRESENT' : 'MISSING'}`);
     
-    if (apiKey) {
+    if (apiKey && apiKey.trim().length > 0) {
       try {
         console.log(`🤖 Attempting AI analysis with Gemini 2.5 Flash Preview`);
         
@@ -277,6 +287,7 @@ Return ONLY a JSON object with these exact keys:
 }`;
 
         console.log(`🤖 Calling Gemini API for site analysis`);
+        console.log(`📝 Prompt length: ${analysisPrompt.length} characters`);
         
         // Call Gemini API to analyze the site
         const aiAnalysis = await callGeminiAPI(analysisPrompt);
@@ -285,16 +296,23 @@ Return ONLY a JSON object with these exact keys:
 
         // Parse the AI response to extract scores
         try {
+          console.log(`🔍 Starting JSON parsing process...`);
+          
           // Clean the response and extract JSON
           let jsonString = aiAnalysis.trim();
+          console.log(`📝 Original response length: ${jsonString.length}`);
           
           // Remove markdown code blocks if present
           jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+          console.log(`📝 After markdown removal: ${jsonString.substring(0, 100)}...`);
           
           // Try to extract JSON from the response
           const jsonMatch = jsonString.match(/\{[\s\S]*?\}/);
           if (jsonMatch) {
             jsonString = jsonMatch[0];
+            console.log(`📝 Extracted JSON string: ${jsonString}`);
+          } else {
+            console.warn(`⚠️ No JSON pattern found in response`);
           }
           
           console.log(`🔍 Attempting to parse JSON: ${jsonString}`);
@@ -315,18 +333,19 @@ Return ONLY a JSON object with these exact keys:
           
         } catch (parseError) {
           console.error('❌ Failed to parse AI analysis:', parseError);
-          console.log('Raw AI response:', aiAnalysis);
+          console.log('Raw AI response for debugging:', aiAnalysis);
           throw parseError; // This will trigger the fallback below
         }
       } catch (aiError) {
         console.error(`❌ AI analysis failed with error:`, aiError);
+        console.error(`❌ Error type: ${aiError.name}, Message: ${aiError.message}`);
         console.log(`🔄 Falling back to rule-based analysis`);
         
         scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
         analysisMethod = `Rule-based (AI failed: ${aiError.message})`;
       }
     } else {
-      console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based analysis`);
+      console.log(`⚠️ GEMINI_API_KEY not configured or empty, using rule-based analysis`);
       scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
       analysisMethod = 'Rule-based (API key not configured)';
     }
