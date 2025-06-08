@@ -40,7 +40,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
+    throw new Error('GEMINI_API_KEY environment variable is not set. Please configure this in your Supabase project settings.');
   }
 
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`, {
@@ -75,6 +75,50 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   }
 
   return data.candidates[0].content.parts[0].text;
+}
+
+// Helper function to generate fallback scores based on basic analysis
+function generateFallbackScores(metadata: any, hasStructuredData: boolean, contentLength: number) {
+  const hasTitle = metadata.title && metadata.title.length > 0;
+  const hasDescription = metadata.description && metadata.description.length > 0;
+  const hasKeywords = metadata.keywords && metadata.keywords.length > 0;
+  
+  return {
+    ai_visibility_score: Math.floor(
+      (hasStructuredData ? 25 : 15) +
+      (hasTitle ? 20 : 10) +
+      (hasDescription ? 20 : 10) +
+      (contentLength > 1000 ? 25 : 15) +
+      Math.random() * 10
+    ),
+    schema_score: Math.floor(
+      (hasStructuredData ? 60 : 20) +
+      (hasTitle ? 15 : 5) +
+      (hasDescription ? 15 : 5) +
+      Math.random() * 10
+    ),
+    semantic_score: Math.floor(
+      (hasTitle ? 25 : 10) +
+      (hasDescription ? 25 : 10) +
+      (hasKeywords ? 15 : 5) +
+      (contentLength > 500 ? 25 : 15) +
+      Math.random() * 10
+    ),
+    citation_score: Math.floor(
+      (contentLength > 2000 ? 30 : contentLength > 1000 ? 20 : 10) +
+      (hasTitle ? 20 : 10) +
+      (hasDescription ? 20 : 10) +
+      (hasStructuredData ? 15 : 5) +
+      Math.random() * 10
+    ),
+    technical_seo_score: Math.floor(
+      (hasTitle ? 25 : 10) +
+      (hasDescription ? 25 : 10) +
+      (hasStructuredData ? 25 : 10) +
+      (hasKeywords ? 15 : 5) +
+      Math.random() * 10
+    )
+  };
 }
 
 serve(async (req) => {
@@ -146,8 +190,16 @@ serve(async (req) => {
       websiteContent = `Website: ${url}\nDomain: ${domain}\nNote: Content could not be fetched directly.`;
     }
 
-    // Prepare the prompt for AI analysis
-    const analysisPrompt = `Analyze this website for AI visibility and provide scores from 1-100 for each category:
+    let scores;
+    let analysisMethod = 'AI-powered';
+
+    // Check if Gemini API key is available
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
+    
+    if (apiKey) {
+      try {
+        // Prepare the prompt for AI analysis
+        const analysisPrompt = `Analyze this website for AI visibility and provide scores from 1-100 for each category:
 
 Website URL: ${url}
 Title: ${metadata.title || 'Not available'}
@@ -171,34 +223,37 @@ Return only a JSON object with these exact keys:
   "technical_seo_score": number
 }`;
 
-    console.log(`🤖 Calling Gemini API for site analysis`);
-    
-    // Call Gemini API to analyze the site
-    const aiAnalysis = await callGeminiAPI(analysisPrompt);
-    
-    console.log(`✅ Gemini API returned analysis`);
+        console.log(`🤖 Calling Gemini API for site analysis`);
+        
+        // Call Gemini API to analyze the site
+        const aiAnalysis = await callGeminiAPI(analysisPrompt);
+        
+        console.log(`✅ Gemini API returned analysis`);
 
-    // Parse the AI response to extract scores
-    let scores;
-    try {
-      // Try to extract JSON from the response
-      const jsonMatch = aiAnalysis.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        scores = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error('No JSON found in AI response');
+        // Parse the AI response to extract scores
+        try {
+          // Try to extract JSON from the response
+          const jsonMatch = aiAnalysis.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            scores = JSON.parse(jsonMatch[0]);
+          } else {
+            throw new Error('No JSON found in AI response');
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse AI analysis, using fallback scores');
+          throw parseError; // This will trigger the fallback below
+        }
+      } catch (aiError) {
+        console.warn(`⚠️ AI analysis failed: ${aiError.message}`);
+        console.log(`🔄 Falling back to rule-based analysis`);
+        
+        scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
+        analysisMethod = 'Rule-based (AI unavailable)';
       }
-    } catch (parseError) {
-      console.warn('Failed to parse AI analysis, using fallback scores');
-      
-      // Fallback scoring based on basic analysis
-      scores = {
-        ai_visibility_score: hasStructuredData ? 75 : 60,
-        schema_score: hasStructuredData ? 80 : 45,
-        semantic_score: metadata.title && metadata.description ? 70 : 50,
-        citation_score: websiteContent.length > 1000 ? 65 : 45,
-        technical_seo_score: metadata.title && metadata.description ? 75 : 55
-      };
+    } else {
+      console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based analysis`);
+      scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
+      analysisMethod = 'Rule-based (API key not configured)';
     }
 
     // Ensure all scores are within valid range
@@ -219,13 +274,14 @@ Return only a JSON object with these exact keys:
       created_at: new Date().toISOString()
     };
 
-    console.log(`📊 Generated audit scores:`, scores);
+    console.log(`📊 Generated audit scores using ${analysisMethod}:`, scores);
 
     // Return successful response
     return new Response(
       JSON.stringify({
         audit,
-        analysis_summary: `AI visibility analysis completed for ${url}. Scores range from ${Math.min(...Object.values(scores))} to ${Math.max(...Object.values(scores))}.`
+        analysis_summary: `AI visibility analysis completed for ${url} using ${analysisMethod}. Scores range from ${Math.min(...Object.values(scores))} to ${Math.max(...Object.values(scores))}.`,
+        analysis_method: analysisMethod
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -241,7 +297,10 @@ Return only a JSON object with these exact keys:
       JSON.stringify({ 
         error: 'Failed to analyze site',
         details: error.message,
-        type: error.name || 'Unknown Error'
+        type: error.name || 'Unknown Error',
+        suggestion: error.message.includes('GEMINI_API_KEY') 
+          ? 'Please configure the GEMINI_API_KEY environment variable in your Supabase project settings under Project Settings > Environment Variables.'
+          : 'Please check the logs for more details and try again.'
       }),
       {
         status: 500,
