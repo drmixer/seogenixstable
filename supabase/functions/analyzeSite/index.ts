@@ -54,7 +54,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
 
   console.log(`✅ API Key found: ${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}`);
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
   console.log(`🌐 Making request to Gemini API...`);
 
   const requestBody = {
@@ -388,7 +388,7 @@ Return ONLY a valid JSON object with these exact keys (no additional text):
               }
             }
             
-            analysisMethod = 'AI-powered (Gemini 1.5 Flash)';
+            analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
           } else {
             console.warn('❌ No JSON found in AI response, response was:', aiAnalysis);
             throw new Error('No valid JSON found in AI response');
