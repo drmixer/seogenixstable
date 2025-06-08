@@ -45,7 +45,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     throw new Error('GEMINI_API_KEY environment variable is not set. Please configure this in your Supabase project settings.');
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
   console.log(`🌐 Making request to: ${apiUrl.replace(apiKey, 'HIDDEN_KEY')}`);
 
   const requestBody = {
@@ -434,7 +434,7 @@ IMPORTANT: Return ONLY this JSON object, no other text:
         try {
           scores = extractAndParseJSON(aiAnalysis);
           console.log(`✅ Successfully parsed AI scores:`, scores);
-          analysisMethod = 'AI-powered (Gemini 2.0 Flash)';
+          analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
         } catch (parseError) {
           console.error('❌ Failed to parse AI analysis:', parseError);
           console.log('Raw AI response:', aiAnalysis);
