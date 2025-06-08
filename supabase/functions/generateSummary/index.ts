@@ -10,21 +10,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Check if request has a body
-    const contentLength = req.headers.get('content-length')
-    if (!contentLength || contentLength === '0') {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Empty request body',
-          details: 'Request body cannot be empty'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
-        },
-      )
-    }
-
     // Parse JSON request body with error handling
     let requestData
     try {
@@ -38,7 +23,7 @@ Deno.serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
+          status: 400,
         },
       )
     }
@@ -53,7 +38,7 @@ Deno.serve(async (req) => {
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
+          status: 400,
         },
       )
     }
