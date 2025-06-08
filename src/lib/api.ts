@@ -452,47 +452,65 @@ export const entityApi = {
     return data || [];
   },
 
-  async analyzeEntityCoverage(siteId: string, url: string): Promise<{ entities: Entity[] }> {
+  async analyzeEntityCoverage(siteId: string, url: string): Promise<{ 
+    entities: Entity[]; 
+    analysis_summary: string;
+    total_entities: number;
+    coverage_score: number;
+  }> {
     try {
-      // Generate mock entity data for now
-      const mockEntities = [
-        {
-          site_id: siteId,
-          entity_name: 'Professional Services',
-          entity_type: 'Service Category',
-          mention_count: 15,
-          gap: false,
-          created_at: new Date().toISOString()
-        },
-        {
-          site_id: siteId,
-          entity_name: 'Business Solutions',
-          entity_type: 'Service Category',
-          mention_count: 12,
-          gap: false,
-          created_at: new Date().toISOString()
-        },
-        {
-          site_id: siteId,
-          entity_name: 'Customer Support',
-          entity_type: 'Service Feature',
-          mention_count: 2,
-          gap: true,
-          created_at: new Date().toISOString()
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      console.log('🚀 Calling analyzeEntityCoverage edge function with:', { siteId, url });
+
+      // Call the analyzeEntityCoverage edge function
+      const { data, error } = await supabase.functions.invoke('analyzeEntityCoverage', {
+        body: { siteId, url, user_id: user.id }
+      });
+
+      console.log('📥 analyzeEntityCoverage response:', { data, error });
+
+      if (error) {
+        console.error('❌ analyzeEntityCoverage edge function error:', error);
+        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+      }
+
+      if (!data) {
+        throw new Error('No data returned from analyzeEntityCoverage edge function');
+      }
+
+      if (data.error) {
+        console.error('❌ analyzeEntityCoverage returned error:', data.error);
+        throw new Error(`Entity analysis failed: ${data.error}`);
+      }
+
+      console.log('✅ analyzeEntityCoverage completed successfully');
+
+      // Save entities to database if any were found
+      if (data.entities && data.entities.length > 0) {
+        const { data: savedEntities, error: entityError } = await supabase
+          .from('entities')
+          .insert(data.entities)
+          .select();
+
+        if (entityError) {
+          console.error('❌ Database error saving entities:', entityError);
+          // Don't throw here, just log the error and use the original entities
+        } else {
+          console.log('✅ Entities saved to database:', savedEntities);
+          data.entities = savedEntities;
         }
-      ];
+      }
 
-      // Save entities to database
-      const { data: savedEntities, error: entityError } = await supabase
-        .from('entities')
-        .insert(mockEntities)
-        .select();
-
-      if (entityError) throw entityError;
-
-      return { entities: savedEntities };
+      return {
+        entities: data.entities || [],
+        analysis_summary: data.analysis_summary || 'Entity analysis completed',
+        total_entities: data.total_entities || 0,
+        coverage_score: data.coverage_score || 0
+      };
     } catch (error) {
-      console.error('Error analyzing entity coverage:', error);
+      console.error('❌ Error analyzing entity coverage:', error);
       throw error;
     }
   }
