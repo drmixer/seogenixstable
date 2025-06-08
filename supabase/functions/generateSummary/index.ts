@@ -102,49 +102,47 @@ Deno.serve(async (req) => {
 })
 
 async function generateSummaryContent(url: string, summaryType: string): Promise<string> {
+  let domain: string
+  let siteName: string
+  let companyName: string
+  
+  // Safely parse the URL with error handling
   try {
-    let domain: string
-    let siteName: string
-    let companyName: string
-    
-    // Safely parse the URL with error handling
-    try {
-      const parsedUrl = new URL(url)
-      domain = parsedUrl.hostname
-      siteName = domain.replace('www.', '').split('.')[0]
-      companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
-    } catch (urlError) {
-      console.warn('⚠️ Invalid URL provided, using fallback values:', urlError.message)
-      // Use fallback values when URL is invalid
-      domain = 'example.com'
-      siteName = 'example'
-      companyName = 'Example Company'
-    }
-    
-    // Check for Gemini API key
-    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
-    
-    if (geminiApiKey && geminiApiKey !== 'your-gemini-api-key') {
-      console.log('🤖 Attempting AI generation with Gemini...')
-      try {
-        const aiContent = await generateWithGemini(url, summaryType, companyName, geminiApiKey)
-        if (aiContent && aiContent.length > 100) {
-          console.log('✅ Successfully generated content with AI')
-          return aiContent
-        }
-      } catch (aiError) {
-        console.warn('⚠️ AI generation failed, using enhanced templates:', aiError.message)
-      }
-    }
-    
-    // Use enhanced template-based generation
-    console.log('📝 Generating content with enhanced templates')
-    return generateEnhancedTemplate(url, summaryType, companyName)
-    
-  } catch (error) {
-    console.error('❌ Error generating summary content:', error)
-    throw new Error('Failed to generate summary content')
+    const parsedUrl = new URL(url)
+    domain = parsedUrl.hostname
+    siteName = domain.replace('www.', '').split('.')[0]
+    companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
+  } catch (urlError) {
+    console.warn('⚠️ Invalid URL provided, using fallback values:', urlError.message)
+    // Use fallback values when URL is invalid
+    domain = 'example.com'
+    siteName = 'example'
+    companyName = 'Example Company'
   }
+  
+  // Check for Gemini API key
+  const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
+  
+  if (geminiApiKey && geminiApiKey !== 'your-gemini-api-key' && geminiApiKey.trim() !== '') {
+    console.log('🤖 Attempting AI generation with Gemini...')
+    try {
+      const aiContent = await generateWithGemini(url, summaryType, companyName, geminiApiKey)
+      if (aiContent && aiContent.trim().length > 100) {
+        console.log('✅ Successfully generated content with AI')
+        return aiContent
+      } else {
+        console.warn('⚠️ AI generated content too short, falling back to templates')
+      }
+    } catch (aiError) {
+      console.warn('⚠️ AI generation failed, using enhanced templates:', aiError.message)
+    }
+  } else {
+    console.log('📝 No valid Gemini API key found, using enhanced templates')
+  }
+  
+  // Use enhanced template-based generation
+  console.log('📝 Generating content with enhanced templates')
+  return generateEnhancedTemplate(url, summaryType, companyName)
 }
 
 async function generateWithGemini(url: string, summaryType: string, companyName: string, apiKey: string): Promise<string> {
@@ -247,14 +245,18 @@ Write as technical overview in 400-500 words.`
     if (!response.ok) {
       const errorText = await response.text()
       console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
+      throw new Error(`Gemini API error: ${response.status}`)
     }
 
-    // Use the standard response.json() method for robust JSON parsing
     const data = await response.json()
     
     if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-      return data.candidates[0].content.parts[0].text
+      const generatedText = data.candidates[0].content.parts[0].text
+      if (generatedText.trim().length > 100) {
+        return generatedText
+      } else {
+        throw new Error('Generated content too short')
+      }
     }
     
     console.error('❌ Gemini API returned unexpected response structure:', data)
