@@ -241,39 +241,55 @@ Write as technical overview in 400-500 words.`
 
   const prompt = prompts[summaryType as keyof typeof prompts] || prompts.SiteOverview
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 2048,
-      }
+  // Create AbortController with 8-second timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 8000)
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 2048,
+        }
+      }),
+      signal: controller.signal
     })
-  })
 
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
-    throw new Error(`Gemini API error: ${response.status}`)
-  }
+    clearTimeout(timeoutId)
 
-  const data = await response.json()
-  
-  if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-    const generatedText = data.candidates[0].content.parts[0].text
-    if (generatedText.trim().length > 100) {
-      return generatedText
-    } else {
-      throw new Error('Generated content too short')
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`❌ Gemini API HTTP error ${response.status}:`, errorText)
+      throw new Error(`Gemini API error: ${response.status}`)
     }
+
+    const data = await response.json()
+    
+    if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
+      const generatedText = data.candidates[0].content.parts[0].text
+      if (generatedText.trim().length > 100) {
+        return generatedText
+      } else {
+        throw new Error('Generated content too short')
+      }
+    }
+    
+    console.error('❌ Gemini API returned unexpected response structure:', data)
+    throw new Error('Invalid response structure from Gemini API')
+  } catch (error) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') {
+      console.warn('⚠️ Gemini API request timed out after 8 seconds')
+      throw new Error('Gemini API request timed out')
+    }
+    throw error
   }
-  
-  console.error('❌ Gemini API returned unexpected response structure:', data)
-  throw new Error('Invalid response structure from Gemini API')
 }
 
 function generateEnhancedTemplate(url: string, summaryType: string, companyName: string): string {

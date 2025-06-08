@@ -109,6 +109,10 @@ Make sure all suggestions are relevant, natural-sounding, and optimized for AI u
     return generateFallbackPrompts(content, industry, audience, contentType)
   }
 
+  // Create AbortController with 8-second timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 8000)
+
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -127,8 +131,11 @@ Make sure all suggestions are relevant, natural-sounding, and optimized for AI u
           topP: 0.95,
           maxOutputTokens: 2048,
         }
-      })
+      }),
+      signal: controller.signal
     })
+
+    clearTimeout(timeoutId)
 
     // Check if response is ok and has proper content type
     if (!response.ok) {
@@ -165,7 +172,12 @@ Make sure all suggestions are relevant, natural-sounding, and optimized for AI u
     // Fallback if AI response can't be parsed
     return generateFallbackPrompts(content, industry, audience, contentType)
   } catch (error) {
-    console.error('❌ Gemini API error:', error)
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') {
+      console.warn('⚠️ Gemini API request timed out after 8 seconds')
+    } else {
+      console.error('❌ Gemini API error:', error)
+    }
     return generateFallbackPrompts(content, industry, audience, contentType)
   }
 }

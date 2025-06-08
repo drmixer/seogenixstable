@@ -163,6 +163,10 @@ Follow standard press release format.`
     return generateFallbackContent(topic, contentType, industry, audience, tone)
   }
 
+  // Create AbortController with 8-second timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 8000)
+
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
       method: 'POST',
@@ -181,8 +185,11 @@ Follow standard press release format.`
           topP: 0.95,
           maxOutputTokens: 2048,
         }
-      })
+      }),
+      signal: controller.signal
     })
+
+    clearTimeout(timeoutId)
 
     // Check if response is ok and has proper content type
     if (!response.ok) {
@@ -208,6 +215,11 @@ Follow standard press release format.`
       throw new Error('Invalid response structure from Gemini API')
     }
   } catch (error) {
+    clearTimeout(timeoutId)
+    if (error.name === 'AbortError') {
+      console.warn('⚠️ Gemini API request timed out after 8 seconds')
+      throw new Error('Gemini API request timed out')
+    }
     console.error('❌ Gemini API error:', error)
     throw new Error(`Gemini API request failed: ${error.message}`)
   }
