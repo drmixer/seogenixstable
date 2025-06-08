@@ -35,7 +35,7 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with the EXACT structure handling from the error
+// Helper function to call Gemini API with enhanced error handling for role-only responses
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
@@ -55,7 +55,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       }]
     }],
     generationConfig: {
-      temperature: 0.1,
+      temperature: 0.2,
       topK: 40,
       topP: 0.95,
       maxOutputTokens: 2048,
@@ -101,47 +101,68 @@ async function callGeminiAPI(prompt: string): Promise<string> {
 
     const data = await response.json();
     console.log(`✅ Gemini API response received`);
-    console.log(`📋 Response structure keys:`, Object.keys(data));
+    console.log(`📋 Full response structure:`, JSON.stringify(data, null, 2));
     
-    // Handle the EXACT structure from the error: {content, finishReason, index}
+    // Enhanced response handling for the specific error case
     let responseText = '';
     
     if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
       console.log(`📝 Found candidates array with ${data.candidates.length} items`);
       const candidate = data.candidates[0];
-      console.log(`📋 Candidate available keys:`, Object.keys(candidate));
+      console.log(`📋 Candidate keys:`, Object.keys(candidate));
       
-      // The error message shows: "Available keys: content, finishReason, index"
-      // So we need to handle this exact structure
+      // Check for blocked content or safety issues
+      if (candidate.finishReason && candidate.finishReason !== 'STOP') {
+        console.warn(`⚠️ Candidate finished with reason: ${candidate.finishReason}`);
+        if (candidate.finishReason === 'SAFETY') {
+          throw new Error('Content was blocked by safety filters. Try rephrasing your request.');
+        } else if (candidate.finishReason === 'RECITATION') {
+          throw new Error('Content was blocked due to recitation concerns.');
+        } else {
+          throw new Error(`Content generation stopped: ${candidate.finishReason}`);
+        }
+      }
+      
       if (candidate.content) {
         console.log(`📋 Content type:`, typeof candidate.content);
-        console.log(`📋 Content structure:`, candidate.content);
+        console.log(`📋 Content keys:`, Object.keys(candidate.content));
+        
+        // Handle the specific case where content only has 'role' property
+        if (candidate.content.role && Object.keys(candidate.content).length === 1) {
+          console.error(`❌ Content object only contains 'role' property: ${candidate.content.role}`);
+          throw new Error(`No text content found - response only contains role: ${candidate.content.role}. This may indicate the content was filtered or blocked.`);
+        }
         
         // Handle different content structures
         if (typeof candidate.content === 'string') {
-          // Content is directly a string
           responseText = candidate.content;
           console.log(`✅ Successfully extracted text from candidates[0].content (direct string)`);
         } else if (candidate.content && typeof candidate.content === 'object') {
           // Content is an object, check for parts array
           if (candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
-            if (candidate.content.parts[0].text) {
-              responseText = candidate.content.parts[0].text;
+            const part = candidate.content.parts[0];
+            console.log(`📋 Parts[0] keys:`, Object.keys(part));
+            
+            if (part.text) {
+              responseText = part.text;
               console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
             } else {
-              console.log(`📋 Parts[0] structure:`, Object.keys(candidate.content.parts[0]));
               // Try other possible text properties in parts[0]
-              const part = candidate.content.parts[0];
-              if (part.content) responseText = part.content;
-              else if (part.message) responseText = part.message;
-              else if (part.response) responseText = part.response;
-              else {
+              const textProps = ['content', 'message', 'response', 'output', 'result'];
+              let found = false;
+              for (const prop of textProps) {
+                if (part[prop] && typeof part[prop] === 'string') {
+                  responseText = part[prop];
+                  console.log(`✅ Successfully extracted text from parts[0].${prop}`);
+                  found = true;
+                  break;
+                }
+              }
+              if (!found) {
                 throw new Error(`No text found in parts[0]. Available keys: ${Object.keys(part).join(', ')}`);
               }
-              console.log(`✅ Successfully extracted text from alternative parts[0] property`);
             }
           } else if (candidate.content.text) {
-            // Content object has direct text property
             responseText = candidate.content.text;
             console.log(`✅ Successfully extracted text from candidates[0].content.text`);
           } else {
@@ -178,12 +199,18 @@ async function callGeminiAPI(prompt: string): Promise<string> {
           }
         }
         if (!found) {
-          throw new Error(`Invalid candidate structure in Gemini API response. Available keys: ${Object.keys(candidate).join(', ')}`);
+          throw new Error(`Invalid candidate structure. Available keys: ${Object.keys(candidate).join(', ')}`);
         }
       }
     } else {
       // No candidates array, try other top-level properties
       console.log(`❌ No candidates array found. Data keys: ${Object.keys(data).join(', ')}`);
+      
+      // Check if there's an error in the response
+      if (data.error) {
+        throw new Error(`Gemini API error: ${data.error.message || JSON.stringify(data.error)}`);
+      }
+      
       const textProps = ['text', 'content', 'message', 'response', 'output', 'result'];
       let found = false;
       for (const prop of textProps) {
@@ -195,7 +222,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
         }
       }
       if (!found) {
-        throw new Error(`Unrecognized response structure from Gemini API. Available keys: ${Object.keys(data).join(', ')}`);
+        throw new Error(`Unrecognized response structure. Available keys: ${Object.keys(data).join(', ')}`);
       }
     }
 
@@ -493,41 +520,26 @@ serve(async (req) => {
       try {
         console.log(`🤖 Attempting AI entity analysis with Gemini API`);
         
-        // Prepare the prompt for AI entity analysis with very specific instructions
-        const analysisPrompt = `You are an entity coverage expert. Analyze this website content and identify key entities with their coverage levels.
+        // Prepare a simpler, more direct prompt to avoid content filtering
+        const analysisPrompt = `Analyze this business website and identify key entities:
 
-Website URL: ${url}
-Title: ${metadata.title || 'Not available'}
-Meta Description: ${metadata.description || 'Not available'}
-Content: ${websiteContent}
+URL: ${url}
+Content: ${websiteContent.substring(0, 3000)}
 
-Analyze the content and identify 8-12 important entities (people, organizations, concepts, technologies, services, products, locations, etc.) that are relevant to this business/website.
+Create a JSON response with business entities found on this website. Include the organization name, services, technologies, and concepts mentioned.
 
-For each entity, determine:
-1. Entity name
-2. Entity type (Organization, Person, Concept, Technology, Service, Product, Location, etc.)
-3. Mention count (how many times it appears in the content)
-4. Whether there's a coverage gap (true if mentioned less than expected for its importance)
-
-CRITICAL: Return ONLY this JSON object with NO additional text:
-
+Return this exact JSON structure:
 {
   "entities": [
-    {
-      "entity_name": "Entity Name",
-      "entity_type": "Entity Type", 
-      "mention_count": 5,
-      "gap": false
-    }
+    {"entity_name": "Business Name", "entity_type": "Organization", "mention_count": 5, "gap": false},
+    {"entity_name": "Service Name", "entity_type": "Service", "mention_count": 3, "gap": false}
   ],
-  "analysis_summary": "Brief summary of the entity coverage analysis",
-  "total_entities": 10,
-  "coverage_score": 75
+  "analysis_summary": "Found X entities with good coverage",
+  "total_entities": 8,
+  "coverage_score": 80
 }
 
-Focus on business/organization entities, service/product entities, technology/concept entities, and industry-specific entities.
-
-IMPORTANT: Return ONLY the JSON object above, no explanatory text, no markdown formatting.`;
+Focus on: organization names, service types, technology terms, business concepts, and industry terminology.`;
 
         console.log(`🤖 Calling Gemini API for entity analysis`);
         
