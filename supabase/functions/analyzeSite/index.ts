@@ -243,15 +243,11 @@ serve(async (req) => {
     let scores;
     let analysisMethod = 'AI-powered (Gemini 2.5 Flash)';
 
-    // Always try to use Gemini API first
+    // Check if Gemini API key is available and try to use it
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     console.log(`🔑 Environment check - GEMINI_API_KEY: ${apiKey ? 'PRESENT' : 'MISSING'}`);
     
-    if (!apiKey) {
-      console.error(`❌ GEMINI_API_KEY not configured`);
-      scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
-      analysisMethod = 'Rule-based (API key not configured)';
-    } else {
+    if (apiKey) {
       try {
         console.log(`🤖 Attempting AI analysis with Gemini 2.5 Flash Preview`);
         
@@ -329,6 +325,10 @@ Return ONLY a JSON object with these exact keys:
         scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
         analysisMethod = `Rule-based (AI failed: ${aiError.message})`;
       }
+    } else {
+      console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based analysis`);
+      scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
+      analysisMethod = 'Rule-based (API key not configured)';
     }
 
     // Ensure all scores are within valid range and are integers
