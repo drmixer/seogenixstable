@@ -226,7 +226,17 @@ Write as technical overview in 400-500 words.`
       throw new Error(`Gemini API returned unexpected content type: ${contentType}`)
     }
 
-    const data = await response.json()
+    // Read response as text first, then parse JSON with error handling
+    const responseText = await response.text()
+    
+    let data
+    try {
+      data = JSON.parse(responseText)
+    } catch (parseError) {
+      console.error('❌ Failed to parse Gemini API response as JSON:', parseError)
+      console.error('❌ Raw response text:', responseText)
+      throw new Error(`Failed to parse Gemini API response: ${parseError.message}. Raw response: ${responseText.substring(0, 200)}...`)
+    }
     
     if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
       return data.candidates[0].content.parts[0].text
