@@ -35,7 +35,7 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API
+// Helper function to call Gemini API with improved response handling
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
@@ -45,7 +45,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     throw new Error('GEMINI_API_KEY environment variable is not set. Please configure this in your Supabase project settings.');
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${apiKey}`;
   console.log(`🌐 Making request to: ${apiUrl.replace(apiKey, 'HIDDEN_KEY')}`);
 
   const requestBody = {
@@ -85,9 +85,10 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     console.log(`✅ Gemini API response received`);
     console.log(`📋 Full response structure:`, JSON.stringify(data, null, 2));
     
-    // Handle different possible response structures
+    // Handle different possible response structures with improved logic
     let responseText = '';
     
+    // Method 1: Standard candidates structure
     if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
       console.log(`📝 Found candidates array with ${data.candidates.length} items`);
       const candidate = data.candidates[0];
@@ -95,21 +96,63 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
         responseText = candidate.content.parts[0].text;
         console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
+      } else if (candidate.text) {
+        // Alternative structure: candidate has direct text property
+        responseText = candidate.text;
+        console.log(`✅ Successfully extracted text from candidates[0].text`);
+      } else if (candidate.output) {
+        // Another alternative: candidate has output property
+        responseText = candidate.output;
+        console.log(`✅ Successfully extracted text from candidates[0].output`);
       } else {
         console.error(`❌ Invalid candidate structure:`, JSON.stringify(candidate, null, 2));
         throw new Error('Invalid candidate structure in Gemini API response');
       }
-    } else if (data.text) {
-      // Alternative response structure
+    } 
+    // Method 2: Direct text property
+    else if (data.text) {
       responseText = data.text;
       console.log(`✅ Successfully extracted text from data.text`);
-    } else if (data.content) {
-      // Another alternative structure
+    } 
+    // Method 3: Content property
+    else if (data.content) {
       responseText = data.content;
       console.log(`✅ Successfully extracted text from data.content`);
-    } else {
-      console.error(`❌ Unrecognized Gemini API response structure:`, JSON.stringify(data, null, 2));
-      throw new Error('Unrecognized response structure from Gemini API');
+    }
+    // Method 4: Output property
+    else if (data.output) {
+      responseText = data.output;
+      console.log(`✅ Successfully extracted text from data.output`);
+    }
+    // Method 5: Response property
+    else if (data.response) {
+      responseText = data.response;
+      console.log(`✅ Successfully extracted text from data.response`);
+    }
+    // Method 6: Check if data itself is a string
+    else if (typeof data === 'string') {
+      responseText = data;
+      console.log(`✅ Successfully extracted text from data (string)`);
+    }
+    // Method 7: Look for any text-like property
+    else {
+      // Try to find any property that contains text
+      const textProperties = ['message', 'result', 'generated_text', 'completion'];
+      let found = false;
+      
+      for (const prop of textProperties) {
+        if (data[prop] && typeof data[prop] === 'string') {
+          responseText = data[prop];
+          console.log(`✅ Successfully extracted text from data.${prop}`);
+          found = true;
+          break;
+        }
+      }
+      
+      if (!found) {
+        console.error(`❌ Unrecognized Gemini API response structure:`, JSON.stringify(data, null, 2));
+        throw new Error('Unrecognized response structure from Gemini API');
+      }
     }
 
     if (!responseText || responseText.trim().length === 0) {
@@ -391,7 +434,7 @@ IMPORTANT: Return ONLY this JSON object, no other text:
         try {
           scores = extractAndParseJSON(aiAnalysis);
           console.log(`✅ Successfully parsed AI scores:`, scores);
-          analysisMethod = 'AI-powered (Gemini 2.5 Flash)';
+          analysisMethod = 'AI-powered (Gemini 2.0 Flash)';
         } catch (parseError) {
           console.error('❌ Failed to parse AI analysis:', parseError);
           console.log('Raw AI response:', aiAnalysis);
