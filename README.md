@@ -65,6 +65,8 @@ The Supabase Edge Functions in the `supabase/functions` directory handle various
 - `generateSummary`: Creates LLM-friendly summaries of your site
 - `entityCoverage`: Analyzes entity coverage in your content
 
+**Note**: Edge functions are automatically deployed to Supabase when changes are made to the function files. No manual deployment is required in this development environment.
+
 ## Deployment
 
 ### Frontend
@@ -77,21 +79,9 @@ To deploy the frontend on Vercel or Netlify:
 
 ### Supabase Edge Functions
 
-To deploy Supabase Edge Functions:
+Edge functions are automatically deployed when you make changes to the function files in the `supabase/functions` directory. No manual deployment steps are required in this development environment.
 
-1. Install the Supabase CLI
-2. Login to your Supabase account:
-   ```
-   supabase login
-   ```
-3. Link your project:
-   ```
-   supabase link --project-ref your-project-ref
-   ```
-4. Deploy the Edge Functions:
-   ```
-   supabase functions deploy --project-ref your-project-ref
-   ```
+For production deployments outside of this environment, you would typically use the Supabase CLI, but this is handled automatically here.
 
 ## License
 
