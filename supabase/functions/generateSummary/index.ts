@@ -60,9 +60,55 @@ Deno.serve(async (req) => {
 
     console.log(`🚀 Generating ${summaryType} summary for ${url}`)
 
-    // Generate summary content - this will always return content, never throw
-    const content = await generateSummaryContent(url, summaryType)
-    const wordCount = content.split(/\s+/).filter(word => word.length > 0).length
+    // Parse URL safely
+    let domain: string
+    let siteName: string
+    let companyName: string
+    
+    try {
+      const parsedUrl = new URL(url)
+      domain = parsedUrl.hostname
+      siteName = domain.replace('www.', '').split('.')[0]
+      companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
+    } catch (urlError) {
+      console.warn('⚠️ Invalid URL provided, using fallback values:', urlError.message)
+      domain = 'example.com'
+      siteName = 'example'
+      companyName = 'Example Company'
+    }
+
+    let content: string
+    let dataSource: string
+    let wordCount: number
+
+    // Check for Gemini API key and attempt AI generation
+    const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
+    
+    if (geminiApiKey && geminiApiKey !== 'your-gemini-api-key' && geminiApiKey.trim() !== '') {
+      console.log('🤖 Attempting AI generation with Gemini...')
+      try {
+        const aiContent = await generateWithGemini(url, summaryType, companyName, geminiApiKey)
+        if (aiContent && aiContent.trim().length > 100) {
+          console.log('✅ Successfully generated content with AI')
+          content = aiContent
+          dataSource = 'AI-Generated Content (Gemini)'
+        } else {
+          console.warn('⚠️ AI generated content too short, falling back to templates')
+          content = generateEnhancedTemplate(url, summaryType, companyName)
+          dataSource = 'Enhanced Template Generator'
+        }
+      } catch (aiError) {
+        console.warn('⚠️ AI generation failed, using enhanced templates:', aiError.message)
+        content = generateEnhancedTemplate(url, summaryType, companyName)
+        dataSource = 'Enhanced Template Generator (AI Fallback)'
+      }
+    } else {
+      console.log('📝 No valid Gemini API key found, using enhanced templates')
+      content = generateEnhancedTemplate(url, summaryType, companyName)
+      dataSource = 'Enhanced Template Generator'
+    }
+
+    wordCount = content.split(/\s+/).filter(word => word.length > 0).length
 
     // Create summary object
     const summary = {
@@ -72,12 +118,12 @@ Deno.serve(async (req) => {
       created_at: new Date().toISOString()
     }
 
-    console.log(`✅ Generated ${wordCount} word summary`)
+    console.log(`✅ Generated ${wordCount} word summary using ${dataSource}`)
 
     return new Response(
       JSON.stringify({
         summary,
-        dataSource: 'AI-Optimized Content Generator',
+        dataSource,
         wordCount
       }),
       {
@@ -85,96 +131,33 @@ Deno.serve(async (req) => {
         status: 200,
       },
     )
+
   } catch (error) {
     console.error('❌ Error in generateSummary function:', error)
     
-    // Even in case of unexpected errors, try to return a basic template response
-    try {
-      const { siteId, url, summaryType } = await req.json().catch(() => ({ 
-        siteId: 'unknown', 
-        url: 'https://example.com', 
-        summaryType: 'SiteOverview' 
-      }))
-      
-      const fallbackContent = generateEnhancedTemplate(url, summaryType, 'Example Company')
-      const wordCount = fallbackContent.split(/\s+/).filter(word => word.length > 0).length
-      
-      return new Response(
-        JSON.stringify({
-          summary: {
-            site_id: siteId,
-            summary_type: summaryType,
-            content: fallbackContent,
-            created_at: new Date().toISOString()
-          },
-          dataSource: 'Fallback Template Generator',
-          wordCount,
-          warning: 'Generated using fallback template due to system error'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200,
+    // Always return a 200 response with fallback content to prevent frontend errors
+    const fallbackContent = generateEnhancedTemplate('https://example.com', 'SiteOverview', 'Example Company')
+    const wordCount = fallbackContent.split(/\s+/).filter(word => word.length > 0).length
+    
+    return new Response(
+      JSON.stringify({
+        summary: {
+          site_id: 'fallback',
+          summary_type: 'SiteOverview',
+          content: fallbackContent,
+          created_at: new Date().toISOString()
         },
-      )
-    } catch (fallbackError) {
-      console.error('❌ Even fallback generation failed:', fallbackError)
-      return new Response(
-        JSON.stringify({ 
-          error: 'Failed to generate summary',
-          details: error.message 
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 500,
-        },
-      )
-    }
+        dataSource: 'Fallback Template Generator',
+        wordCount,
+        warning: 'Generated using fallback template due to system error'
+      }),
+      {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200,
+      },
+    )
   }
 })
-
-async function generateSummaryContent(url: string, summaryType: string): Promise<string> {
-  let domain: string
-  let siteName: string
-  let companyName: string
-  
-  // Safely parse the URL with error handling
-  try {
-    const parsedUrl = new URL(url)
-    domain = parsedUrl.hostname
-    siteName = domain.replace('www.', '').split('.')[0]
-    companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
-  } catch (urlError) {
-    console.warn('⚠️ Invalid URL provided, using fallback values:', urlError.message)
-    // Use fallback values when URL is invalid
-    domain = 'example.com'
-    siteName = 'example'
-    companyName = 'Example Company'
-  }
-  
-  // Check for Gemini API key
-  const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
-  
-  if (geminiApiKey && geminiApiKey !== 'your-gemini-api-key' && geminiApiKey.trim() !== '') {
-    console.log('🤖 Attempting AI generation with Gemini...')
-    try {
-      const aiContent = await generateWithGemini(url, summaryType, companyName, geminiApiKey)
-      if (aiContent && aiContent.trim().length > 100) {
-        console.log('✅ Successfully generated content with AI')
-        return aiContent
-      } else {
-        console.warn('⚠️ AI generated content too short, falling back to templates')
-      }
-    } catch (aiError) {
-      console.warn('⚠️ AI generation failed, using enhanced templates:', aiError.message)
-    }
-  } else {
-    console.log('📝 No valid Gemini API key found, using enhanced templates')
-  }
-  
-  // Always return template-based content as fallback
-  console.log('📝 Generating content with enhanced templates')
-  return generateEnhancedTemplate(url, summaryType, companyName)
-}
 
 async function generateWithGemini(url: string, summaryType: string, companyName: string, apiKey: string): Promise<string> {
   const prompts = {
