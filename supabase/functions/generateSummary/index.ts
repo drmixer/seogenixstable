@@ -1,51 +1,17 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Read the raw request body first
-    const rawBody = await req.text()
-    
-    // Check if the body is empty
-    if (!rawBody || rawBody.trim() === '') {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Empty request body',
-          details: 'Request body cannot be empty'
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        },
-      )
-    }
-
-    // Parse the JSON with proper error handling
-    let requestData
-    try {
-      requestData = JSON.parse(rawBody)
-    } catch (parseError) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Invalid JSON in request body',
-          details: `Failed to parse JSON: ${parseError.message}`
-        }),
-        {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 400,
-        },
-      )
-    }
-
+    // Parse JSON request body directly
+    const requestData = await req.json()
     const { siteId, url, summaryType } = requestData
 
     if (!siteId || !url || !summaryType) {
