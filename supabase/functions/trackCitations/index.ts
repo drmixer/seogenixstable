@@ -175,7 +175,7 @@ async function searchGoogle(query: string, siteUrl: string): Promise<any[]> {
   }
 }
 
-// Helper function to search News API (if API key is available)
+// Helper function to search News API (if API key is available) - FIXED VERSION
 async function searchNews(query: string): Promise<any[]> {
   const apiKey = Deno.env.get('NEWSAPI_KEY');
   
@@ -188,22 +188,74 @@ async function searchNews(query: string): Promise<any[]> {
 
   try {
     console.log(`📰 Performing News search for: "${query}"`);
-    const searchUrl = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&apiKey=${apiKey}&pageSize=10&sortBy=relevancy`;
-    const response = await fetch(searchUrl);
     
-    console.log(`📥 News API response status: ${response.status}`);
+    // Build the search URL with proper parameters
+    const searchParams = new URLSearchParams({
+      q: query,
+      apiKey: apiKey,
+      pageSize: '10',
+      sortBy: 'relevancy',
+      language: 'en'  // Add language parameter
+    });
+    
+    const searchUrl = `https://newsapi.org/v2/everything?${searchParams.toString()}`;
+    console.log(`📰 News API URL: ${searchUrl.replace(apiKey, 'HIDDEN_KEY')}`);
+    
+    const response = await fetch(searchUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'SEOgenix-Bot/1.0',
+        'Accept': 'application/json'
+      }
+    });
+    
+    console.log(`📥 News API response status: ${response.status} ${response.statusText}`);
     
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`❌ News API error: ${response.status} - ${errorText}`);
-      throw new Error(`News API error: ${response.status}`);
+      
+      // Check for specific NewsAPI error codes
+      if (response.status === 200) {
+        // Sometimes NewsAPI returns 200 but with an error in the body
+        try {
+          const errorData = JSON.parse(errorText);
+          if (errorData.status === 'error') {
+            console.error(`❌ News API error in response body:`, errorData);
+            throw new Error(`News API error: ${errorData.code} - ${errorData.message}`);
+          }
+        } catch (parseError) {
+          console.error(`❌ Could not parse News API error response:`, parseError);
+        }
+      }
+      
+      throw new Error(`News API error: ${response.status} - ${errorText}`);
     }
     
     const data = await response.json();
+    
+    // Check if the response contains an error even with 200 status
+    if (data.status === 'error') {
+      console.error(`❌ News API returned error in response body:`, data);
+      throw new Error(`News API error: ${data.code} - ${data.message}`);
+    }
+    
     console.log(`✅ News search returned ${data.articles?.length || 0} results`);
+    console.log(`📊 News API response status: ${data.status}, total results: ${data.totalResults}`);
+    
     return data.articles || [];
   } catch (error) {
     console.error('❌ News search error:', error);
+    
+    // Log additional debugging information
+    if (error.message.includes('rate limit') || error.message.includes('429')) {
+      console.error('📰 News API rate limit exceeded - consider upgrading your plan or reducing request frequency');
+    } else if (error.message.includes('401') || error.message.includes('unauthorized')) {
+      console.error('📰 News API authentication failed - check your API key');
+    } else if (error.message.includes('400')) {
+      console.error('📰 News API bad request - check query parameters');
+    }
+    
     return [];
   }
 }
@@ -318,51 +370,67 @@ serve(async (req) => {
     };
 
     let platformsChecked: string[] = [];
+    let apiErrors: string[] = [];
 
     // Search across different platforms
     for (const query of searchQueries) {
       console.log(`🔍 Searching for: ${query}`);
       
       // Google search
-      const googleResults = await searchGoogle(query, url);
-      if (googleResults.length > 0) {
-        platformsChecked.push('Google');
-        allResults.push(...googleResults.map(item => ({
-          source: 'Google',
-          title: item.title,
-          snippet: item.snippet,
-          url: item.link,
-          relevance: item.snippet?.toLowerCase().includes(domain.toLowerCase()) ? 'high' : 'medium'
-        })));
-        searchSummary.google_results += googleResults.length;
+      try {
+        const googleResults = await searchGoogle(query, url);
+        if (googleResults.length > 0) {
+          platformsChecked.push('Google');
+          allResults.push(...googleResults.map(item => ({
+            source: 'Google',
+            title: item.title,
+            snippet: item.snippet,
+            url: item.link,
+            relevance: item.snippet?.toLowerCase().includes(domain.toLowerCase()) ? 'high' : 'medium'
+          })));
+          searchSummary.google_results += googleResults.length;
+        }
+      } catch (googleError) {
+        console.error('❌ Google search failed:', googleError);
+        apiErrors.push(`Google: ${googleError.message}`);
       }
 
       // News search
-      const newsResults = await searchNews(query);
-      if (newsResults.length > 0) {
-        platformsChecked.push('News');
-        allResults.push(...newsResults.map(item => ({
-          source: 'News',
-          title: item.title,
-          snippet: item.description,
-          url: item.url,
-          relevance: item.description?.toLowerCase().includes(domain.toLowerCase()) ? 'high' : 'medium'
-        })));
-        searchSummary.news_results += newsResults.length;
+      try {
+        const newsResults = await searchNews(query);
+        if (newsResults.length > 0) {
+          platformsChecked.push('News');
+          allResults.push(...newsResults.map(item => ({
+            source: 'News',
+            title: item.title,
+            snippet: item.description,
+            url: item.url,
+            relevance: item.description?.toLowerCase().includes(domain.toLowerCase()) ? 'high' : 'medium'
+          })));
+          searchSummary.news_results += newsResults.length;
+        }
+      } catch (newsError) {
+        console.error('❌ News search failed:', newsError);
+        apiErrors.push(`News: ${newsError.message}`);
       }
 
       // Reddit search
-      const redditResults = await searchReddit(query);
-      if (redditResults.length > 0) {
-        platformsChecked.push('Reddit');
-        allResults.push(...redditResults.map(item => ({
-          source: 'Reddit',
-          title: item.data?.title,
-          snippet: item.data?.selftext || item.data?.title,
-          url: `https://reddit.com${item.data?.permalink}`,
-          relevance: (item.data?.selftext || item.data?.title)?.toLowerCase().includes(domain.toLowerCase()) ? 'high' : 'medium'
-        })));
-        searchSummary.reddit_results += redditResults.length;
+      try {
+        const redditResults = await searchReddit(query);
+        if (redditResults.length > 0) {
+          platformsChecked.push('Reddit');
+          allResults.push(...redditResults.map(item => ({
+            source: 'Reddit',
+            title: item.data?.title,
+            snippet: item.data?.selftext || item.data?.title,
+            url: `https://reddit.com${item.data?.permalink}`,
+            relevance: (item.data?.selftext || item.data?.title)?.toLowerCase().includes(domain.toLowerCase()) ? 'high' : 'medium'
+          })));
+          searchSummary.reddit_results += redditResults.length;
+        }
+      } catch (redditError) {
+        console.error('❌ Reddit search failed:', redditError);
+        apiErrors.push(`Reddit: ${redditError.message}`);
       }
 
       // Small delay between searches to be respectful
@@ -388,6 +456,9 @@ serve(async (req) => {
 
     console.log(`📊 Found ${relevantResults.length} relevant results across platforms`);
     console.log(`🔍 Platforms checked: ${platformsChecked.join(', ')}`);
+    if (apiErrors.length > 0) {
+      console.log(`⚠️ API errors encountered: ${apiErrors.join(', ')}`);
+    }
 
     // Generate mock citations based on the search results or create realistic ones
     const citations = [];
@@ -456,6 +527,7 @@ Focus on what you can reasonably infer about the business based on the domain na
         assistant_response: assistantResponse,
         search_summary: searchSummary,
         platforms_checked: platformsChecked,
+        api_errors: apiErrors.length > 0 ? apiErrors : undefined,
         api_status: {
           google_api: Deno.env.get('GOOGLE_API_KEY') ? 'configured' : 'missing',
           news_api: Deno.env.get('NEWSAPI_KEY') ? 'configured' : 'missing',
