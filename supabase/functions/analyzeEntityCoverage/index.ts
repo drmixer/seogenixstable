@@ -17,8 +17,8 @@ function extractTextFromHTML(html: string): string {
   // Clean up whitespace
   text = text.replace(/\s+/g, ' ').trim();
   
-  // Limit to first 8000 characters to stay within API limits
-  return text.substring(0, 8000);
+  // Limit to first 2000 characters to stay well within API limits
+  return text.substring(0, 2000);
 }
 
 // Helper function to extract metadata from HTML
@@ -35,7 +35,7 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with enhanced error handling for role-only responses
+// Helper function to call Gemini API with reduced token limit
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
@@ -55,10 +55,10 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       }]
     }],
     generationConfig: {
-      temperature: 0.2,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: 2048,
+      temperature: 0.1,
+      topK: 20,
+      topP: 0.8,
+      maxOutputTokens: 512, // Reduced from 2048 to avoid MAX_TOKENS error
     },
     safetySettings: [
       {
@@ -80,7 +80,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     ]
   };
 
-  console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters`);
+  console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters, maxTokens: 512`);
 
   try {
     const response = await fetch(apiUrl, {
@@ -118,6 +118,8 @@ async function callGeminiAPI(prompt: string): Promise<string> {
           throw new Error('Content was blocked by safety filters. Try rephrasing your request.');
         } else if (candidate.finishReason === 'RECITATION') {
           throw new Error('Content was blocked due to recitation concerns.');
+        } else if (candidate.finishReason === 'MAX_TOKENS') {
+          throw new Error('Content generation stopped: MAX_TOKENS - Response was too long. Using fallback analysis.');
         } else {
           throw new Error(`Content generation stopped: ${candidate.finishReason}`);
         }
@@ -383,11 +385,7 @@ function generateFallbackEntityAnalysis(url: string, content: string, siteId: st
     { name: 'Quality Assurance', type: 'Process', importance: 'medium', keywords: ['quality', 'assurance', 'testing'] },
     { name: 'Project Management', type: 'Service Feature', importance: 'medium', keywords: ['project', 'management', 'planning'] },
     { name: 'Consultation', type: 'Service Type', importance: 'high', keywords: ['consult', 'advice', 'expert'] },
-    { name: 'Implementation', type: 'Process', importance: 'medium', keywords: ['implement', 'deploy', 'setup'] },
-    { name: 'Training', type: 'Service Feature', importance: 'low', keywords: ['training', 'education', 'learning'] },
-    { name: 'Maintenance', type: 'Service Feature', importance: 'low', keywords: ['maintenance', 'support', 'upkeep'] },
-    { name: 'Technology', type: 'Concept', importance: 'medium', keywords: ['technology', 'tech', 'digital'] },
-    { name: 'Innovation', type: 'Concept', importance: 'low', keywords: ['innovation', 'innovative', 'cutting-edge'] }
+    { name: 'Implementation', type: 'Process', importance: 'medium', keywords: ['implement', 'deploy', 'setup'] }
   ];
   
   // Check which entities are mentioned in the content
@@ -520,28 +518,25 @@ serve(async (req) => {
       try {
         console.log(`🤖 Attempting AI entity analysis with Gemini API`);
         
-        // Prepare a simpler, more direct prompt to avoid content filtering
-        const analysisPrompt = `Analyze this business website and identify key entities:
+        // Prepare a much more concise prompt to avoid MAX_TOKENS
+        const analysisPrompt = `Analyze this website for key business entities:
 
 URL: ${url}
-Content: ${websiteContent.substring(0, 3000)}
+Content: ${websiteContent.substring(0, 1500)}
 
-Create a JSON response with business entities found on this website. Include the organization name, services, technologies, and concepts mentioned.
-
-Return this exact JSON structure:
+Return JSON with 5-6 entities:
 {
   "entities": [
-    {"entity_name": "Business Name", "entity_type": "Organization", "mention_count": 5, "gap": false},
-    {"entity_name": "Service Name", "entity_type": "Service", "mention_count": 3, "gap": false}
+    {"entity_name": "Company Name", "entity_type": "Organization", "mention_count": 5, "gap": false}
   ],
-  "analysis_summary": "Found X entities with good coverage",
-  "total_entities": 8,
+  "analysis_summary": "Brief analysis",
+  "total_entities": 6,
   "coverage_score": 80
 }
 
-Focus on: organization names, service types, technology terms, business concepts, and industry terminology.`;
+Include: organization, services, technologies, concepts. Keep response under 400 tokens.`;
 
-        console.log(`🤖 Calling Gemini API for entity analysis`);
+        console.log(`🤖 Calling Gemini API for entity analysis (concise prompt: ${analysisPrompt.length} chars)`);
         
         // Call Gemini API to analyze entities
         const aiAnalysis = await callGeminiAPI(analysisPrompt);
