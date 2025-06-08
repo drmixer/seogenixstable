@@ -10,8 +10,39 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Parse JSON request body directly
-    const requestData = await req.json()
+    // Check if request has a body
+    const contentLength = req.headers.get('content-length')
+    if (!contentLength || contentLength === '0') {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Empty request body',
+          details: 'Request body cannot be empty'
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
+    }
+
+    // Parse JSON request body with error handling
+    let requestData
+    try {
+      requestData = await req.json()
+    } catch (jsonError) {
+      console.error('❌ Failed to parse request JSON:', jsonError)
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid JSON in request body',
+          details: `Failed to parse JSON: ${jsonError.message}`
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        },
+      )
+    }
+
     const { siteId, url, summaryType } = requestData
 
     if (!siteId || !url || !summaryType) {
