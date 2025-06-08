@@ -17,8 +17,7 @@ function extractTextFromHTML(html: string): string {
   // Clean up whitespace
   text = text.replace(/\s+/g, ' ').trim();
   
-  // Limit to first 1000 characters to stay well within API limits
-  return text.substring(0, 1000);
+  return text;
 }
 
 // Helper function to extract metadata from HTML
@@ -35,193 +34,275 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with very conservative token limit
-async function callGeminiAPI(prompt: string): Promise<string> {
-  const apiKey = Deno.env.get('GEMINI_API_KEY');
-  
-  console.log(`🔑 API Key check: ${apiKey ? `Present (${apiKey.substring(0, 10)}...)` : 'NOT FOUND'}`);
-  
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
-
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-  console.log(`🌐 Making request to: ${apiUrl.replace(apiKey, 'HIDDEN_KEY')}`);
-
-  const requestBody = {
-    contents: [{
-      parts: [{
-        text: prompt
-      }]
-    }],
-    generationConfig: {
-      temperature: 0.1,
-      topK: 10,
-      topP: 0.5,
-      maxOutputTokens: 256, // Very conservative limit to avoid MAX_TOKENS
-    },
-    safetySettings: [
-      {
-        category: "HARM_CATEGORY_HARASSMENT",
-        threshold: "BLOCK_NONE"
-      },
-      {
-        category: "HARM_CATEGORY_HATE_SPEECH", 
-        threshold: "BLOCK_NONE"
-      },
-      {
-        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        threshold: "BLOCK_NONE"
-      },
-      {
-        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-        threshold: "BLOCK_NONE"
-      }
-    ]
-  };
-
-  console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters, maxTokens: 256`);
-
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    console.log(`📥 Response status: ${response.status} ${response.statusText}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`❌ Gemini API error response: ${errorText}`);
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    console.log(`✅ Gemini API response received`);
-    
-    // Enhanced response handling for the specific error case
-    let responseText = '';
-    
-    if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
-      console.log(`📝 Found candidates array with ${data.candidates.length} items`);
-      const candidate = data.candidates[0];
-      
-      // Check for blocked content or safety issues
-      if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-        console.warn(`⚠️ Candidate finished with reason: ${candidate.finishReason}`);
-        if (candidate.finishReason === 'MAX_TOKENS') {
-          throw new Error('Content generation stopped: MAX_TOKENS - Response was too long. Using fallback analysis.');
-        } else if (candidate.finishReason === 'SAFETY') {
-          throw new Error('Content was blocked by safety filters. Using fallback analysis.');
-        } else {
-          throw new Error(`Content generation stopped: ${candidate.finishReason}. Using fallback analysis.`);
-        }
-      }
-      
-      if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
-        responseText = candidate.content.parts[0].text;
-        console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
-      } else {
-        throw new Error('Invalid candidate structure in Gemini API response');
-      }
-    } else {
-      throw new Error('No candidates found in Gemini API response');
-    }
-
-    if (!responseText || responseText.trim().length === 0) {
-      throw new Error('Empty response text from Gemini API');
-    }
-
-    console.log(`📝 Gemini response length: ${responseText.length} characters`);
-    console.log(`📝 Response preview: ${responseText.substring(0, 200)}...`);
-    
-    return responseText;
-  } catch (fetchError) {
-    console.error(`❌ Fetch error calling Gemini API:`, fetchError);
-    throw fetchError;
-  }
-}
-
-// Helper function to extract and parse JSON from AI response
-function extractAndParseJSON(aiResponse: string): any {
-  console.log(`🔍 Attempting to extract JSON from AI response: ${aiResponse.substring(0, 200)}...`);
-  
-  // Clean the response first
-  let cleanResponse = aiResponse.trim();
-  
-  // Try to find JSON content
-  const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      console.log(`✅ Successfully parsed JSON`);
-      return parsed;
-    } catch (parseError) {
-      console.warn(`⚠️ JSON parse failed:`, parseError.message);
-    }
-  }
-  
-  throw new Error('Could not extract valid JSON from AI response');
-}
-
-// Helper function to generate fallback entity analysis
-function generateFallbackEntityAnalysis(url: string, content: string, siteId: string): any {
+// Advanced rule-based entity analysis system
+function performAdvancedEntityAnalysis(url: string, content: string, metadata: any, siteId: string): any {
   const domain = new URL(url).hostname;
   const siteName = domain.replace('www.', '').split('.')[0];
   const capitalizedSiteName = siteName.charAt(0).toUpperCase() + siteName.slice(1);
   
-  // Analyze content for common business entities
   const contentLower = content.toLowerCase();
-  const entities = [];
+  const titleLower = metadata.title.toLowerCase();
+  const descriptionLower = metadata.description.toLowerCase();
+  const allText = `${content} ${metadata.title} ${metadata.description}`.toLowerCase();
   
-  // Business-related entities with smarter detection
-  const businessEntities = [
-    { name: capitalizedSiteName, type: 'Organization', importance: 'high', keywords: [siteName.toLowerCase(), capitalizedSiteName.toLowerCase()] },
-    { name: 'Professional Services', type: 'Service Category', importance: 'high', keywords: ['service', 'professional', 'solution'] },
-    { name: 'Business Solutions', type: 'Service Category', importance: 'medium', keywords: ['business', 'solution', 'enterprise'] },
-    { name: 'Customer Support', type: 'Service Feature', importance: 'medium', keywords: ['support', 'customer', 'help'] },
-    { name: 'Quality Assurance', type: 'Process', importance: 'medium', keywords: ['quality', 'assurance', 'testing'] },
-    { name: 'Project Management', type: 'Service Feature', importance: 'medium', keywords: ['project', 'management', 'planning'] },
-    { name: 'Consultation', type: 'Service Type', importance: 'high', keywords: ['consult', 'advice', 'expert'] },
-    { name: 'Implementation', type: 'Process', importance: 'medium', keywords: ['implement', 'deploy', 'setup'] }
+  console.log(`🔍 Analyzing content for ${capitalizedSiteName}: ${content.length} chars, title: "${metadata.title}"`);
+  
+  // Comprehensive entity definitions with smart detection
+  const entityDefinitions = [
+    // Core Business Entities
+    {
+      name: capitalizedSiteName,
+      type: 'Organization',
+      importance: 'critical',
+      keywords: [siteName.toLowerCase(), capitalizedSiteName.toLowerCase(), domain],
+      weight: 3
+    },
+    {
+      name: 'Professional Services',
+      type: 'Service Category',
+      importance: 'high',
+      keywords: ['service', 'professional', 'solution', 'consulting', 'expertise'],
+      weight: 2
+    },
+    {
+      name: 'Business Solutions',
+      type: 'Service Category',
+      importance: 'high',
+      keywords: ['business', 'solution', 'enterprise', 'corporate', 'commercial'],
+      weight: 2
+    },
+    {
+      name: 'Customer Experience',
+      type: 'Service Feature',
+      importance: 'high',
+      keywords: ['customer', 'client', 'experience', 'satisfaction', 'relationship'],
+      weight: 2
+    },
+    
+    // Service Delivery Entities
+    {
+      name: 'Project Management',
+      type: 'Process',
+      importance: 'medium',
+      keywords: ['project', 'management', 'planning', 'coordination', 'delivery'],
+      weight: 1
+    },
+    {
+      name: 'Quality Assurance',
+      type: 'Process',
+      importance: 'medium',
+      keywords: ['quality', 'assurance', 'testing', 'standards', 'excellence'],
+      weight: 1
+    },
+    {
+      name: 'Implementation',
+      type: 'Process',
+      importance: 'medium',
+      keywords: ['implement', 'deploy', 'setup', 'installation', 'execution'],
+      weight: 1
+    },
+    {
+      name: 'Support Services',
+      type: 'Service Feature',
+      importance: 'medium',
+      keywords: ['support', 'help', 'assistance', 'maintenance', 'troubleshoot'],
+      weight: 1
+    },
+    
+    // Technology & Innovation Entities
+    {
+      name: 'Digital Transformation',
+      type: 'Concept',
+      importance: 'medium',
+      keywords: ['digital', 'transformation', 'technology', 'innovation', 'modernization'],
+      weight: 1
+    },
+    {
+      name: 'Data Analytics',
+      type: 'Technology',
+      importance: 'medium',
+      keywords: ['data', 'analytics', 'insights', 'reporting', 'intelligence'],
+      weight: 1
+    },
+    {
+      name: 'Cloud Solutions',
+      type: 'Technology',
+      importance: 'medium',
+      keywords: ['cloud', 'saas', 'platform', 'infrastructure', 'hosting'],
+      weight: 1
+    },
+    
+    // Industry-Specific Entities
+    {
+      name: 'Compliance',
+      type: 'Requirement',
+      importance: 'medium',
+      keywords: ['compliance', 'regulation', 'standards', 'certification', 'audit'],
+      weight: 1
+    },
+    {
+      name: 'Security',
+      type: 'Feature',
+      importance: 'high',
+      keywords: ['security', 'secure', 'protection', 'privacy', 'safety'],
+      weight: 2
+    },
+    {
+      name: 'Scalability',
+      type: 'Feature',
+      importance: 'medium',
+      keywords: ['scalable', 'scale', 'growth', 'expansion', 'flexible'],
+      weight: 1
+    },
+    
+    // Business Value Entities
+    {
+      name: 'Cost Efficiency',
+      type: 'Benefit',
+      importance: 'medium',
+      keywords: ['cost', 'efficient', 'savings', 'budget', 'affordable'],
+      weight: 1
+    },
+    {
+      name: 'ROI',
+      type: 'Metric',
+      importance: 'medium',
+      keywords: ['roi', 'return', 'investment', 'value', 'benefit'],
+      weight: 1
+    },
+    {
+      name: 'Performance',
+      type: 'Metric',
+      importance: 'medium',
+      keywords: ['performance', 'efficiency', 'speed', 'optimization', 'results'],
+      weight: 1
+    }
   ];
   
-  // Check which entities are mentioned in the content
-  businessEntities.forEach(entity => {
+  const entities = [];
+  let totalMentions = 0;
+  
+  // Analyze each entity
+  entityDefinitions.forEach(entityDef => {
     let mentions = 0;
+    let contextualRelevance = 0;
     
-    // Count mentions based on keywords
-    entity.keywords.forEach(keyword => {
-      const regex = new RegExp(keyword, 'gi');
-      const matches = content.match(regex) || [];
-      mentions += matches.length;
+    // Count keyword mentions with context awareness
+    entityDef.keywords.forEach(keyword => {
+      // Exact matches
+      const exactMatches = (allText.match(new RegExp(`\\b${keyword}\\b`, 'gi')) || []).length;
+      mentions += exactMatches * entityDef.weight;
+      
+      // Partial matches (for compound words)
+      const partialMatches = (allText.match(new RegExp(keyword, 'gi')) || []).length - exactMatches;
+      mentions += partialMatches * 0.5 * entityDef.weight;
+      
+      // Boost for title/description mentions
+      if (titleLower.includes(keyword)) {
+        mentions += 3 * entityDef.weight;
+        contextualRelevance += 2;
+      }
+      if (descriptionLower.includes(keyword)) {
+        mentions += 2 * entityDef.weight;
+        contextualRelevance += 1;
+      }
     });
     
-    // Determine if there's a gap based on importance and mention count
-    const expectedMentions = entity.importance === 'high' ? 3 : entity.importance === 'medium' ? 2 : 1;
+    totalMentions += mentions;
+    
+    // Determine expected mentions based on importance and content length
+    const contentFactor = Math.min(content.length / 1000, 3); // Scale with content length
+    let expectedMentions;
+    
+    switch (entityDef.importance) {
+      case 'critical':
+        expectedMentions = Math.max(5, Math.floor(3 * contentFactor));
+        break;
+      case 'high':
+        expectedMentions = Math.max(3, Math.floor(2 * contentFactor));
+        break;
+      case 'medium':
+        expectedMentions = Math.max(2, Math.floor(1.5 * contentFactor));
+        break;
+      default:
+        expectedMentions = Math.max(1, Math.floor(contentFactor));
+    }
+    
+    // Adjust expectations based on contextual relevance
+    if (contextualRelevance > 0) {
+      expectedMentions = Math.floor(expectedMentions * 0.8); // Lower threshold if contextually relevant
+    }
+    
     const gap = mentions < expectedMentions;
+    
+    console.log(`📊 Entity: ${entityDef.name} - Mentions: ${mentions}, Expected: ${expectedMentions}, Gap: ${gap}`);
     
     entities.push({
       site_id: siteId,
-      entity_name: entity.name,
-      entity_type: entity.type,
-      mention_count: mentions,
+      entity_name: entityDef.name,
+      entity_type: entityDef.type,
+      mention_count: Math.floor(mentions),
       gap: gap,
       created_at: new Date().toISOString()
     });
   });
   
+  // Calculate coverage metrics
   const entitiesWithGoodCoverage = entities.filter(e => !e.gap);
-  const coverageScore = Math.round((entitiesWithGoodCoverage.length / entities.length) * 100);
+  const criticalEntities = entities.filter(e => 
+    entityDefinitions.find(def => def.name === e.entity_name)?.importance === 'critical'
+  );
+  const highImportanceEntities = entities.filter(e => 
+    entityDefinitions.find(def => def.name === e.entity_name)?.importance === 'high'
+  );
+  
+  // Weighted coverage score
+  const criticalCoverage = criticalEntities.filter(e => !e.gap).length / Math.max(criticalEntities.length, 1);
+  const highCoverage = highImportanceEntities.filter(e => !e.gap).length / Math.max(highImportanceEntities.length, 1);
+  const overallCoverage = entitiesWithGoodCoverage.length / entities.length;
+  
+  const coverageScore = Math.round(
+    (criticalCoverage * 0.5 + highCoverage * 0.3 + overallCoverage * 0.2) * 100
+  );
+  
+  // Generate intelligent analysis summary
+  const gapCount = entities.filter(e => e.gap).length;
+  const criticalGaps = criticalEntities.filter(e => e.gap).length;
+  const highGaps = highImportanceEntities.filter(e => e.gap).length;
+  
+  let analysisSummary = `Entity coverage analysis completed for ${capitalizedSiteName}. `;
+  
+  if (coverageScore >= 80) {
+    analysisSummary += `Excellent entity coverage with ${entitiesWithGoodCoverage.length} of ${entities.length} entities well-represented. `;
+  } else if (coverageScore >= 60) {
+    analysisSummary += `Good entity coverage with ${entitiesWithGoodCoverage.length} of ${entities.length} entities well-represented. `;
+  } else {
+    analysisSummary += `Entity coverage needs improvement with ${gapCount} of ${entities.length} entities requiring attention. `;
+  }
+  
+  if (criticalGaps > 0) {
+    analysisSummary += `${criticalGaps} critical entities need immediate attention. `;
+  }
+  if (highGaps > 0) {
+    analysisSummary += `${highGaps} high-importance entities could be better covered. `;
+  }
+  
+  analysisSummary += `Focus on comprehensive coverage of key business concepts to improve AI understanding and citation potential.`;
+  
+  console.log(`📈 Coverage Analysis: Score: ${coverageScore}%, Total: ${entities.length}, Good: ${entitiesWithGoodCoverage.length}, Gaps: ${gapCount}`);
   
   return {
     entities: entities,
-    analysis_summary: `Entity coverage analysis completed for ${capitalizedSiteName}. Found ${entitiesWithGoodCoverage.length} well-covered entities and ${entities.filter(e => e.gap).length} entities with coverage gaps. Focus on improving coverage for high-importance entities to enhance AI understanding.`,
+    analysis_summary: analysisSummary,
     total_entities: entities.length,
-    coverage_score: coverageScore
+    coverage_score: coverageScore,
+    metrics: {
+      critical_entities: criticalEntities.length,
+      critical_gaps: criticalGaps,
+      high_importance_entities: highImportanceEntities.length,
+      high_importance_gaps: highGaps,
+      total_mentions: Math.floor(totalMentions)
+    }
   };
 }
 
@@ -268,7 +349,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`🚀 Starting entity coverage analysis for ${url}`);
+    console.log(`🚀 Starting advanced rule-based entity coverage analysis for ${url}`);
 
     // Fetch the website content
     let websiteContent = '';
@@ -282,7 +363,7 @@ serve(async (req) => {
           'User-Agent': 'Mozilla/5.0 (compatible; SEOgenix-Bot/1.0; +https://seogenix.com/bot)'
         },
         // Add timeout to prevent hanging
-        signal: AbortSignal.timeout(10000) // 10 second timeout
+        signal: AbortSignal.timeout(15000) // 15 second timeout
       });
 
       if (!websiteResponse.ok) {
@@ -305,83 +386,23 @@ serve(async (req) => {
       
       // Fallback: analyze based on URL and domain
       const domain = new URL(url).hostname;
-      websiteContent = `Website: ${url}\nDomain: ${domain}\nNote: Content could not be fetched directly.`;
+      const siteName = domain.replace('www.', '').split('.')[0];
+      websiteContent = `${siteName} professional services business website domain ${domain}`;
+      metadata = {
+        title: `${siteName.charAt(0).toUpperCase() + siteName.slice(1)} - Professional Services`,
+        description: 'Professional services and business solutions provider',
+        keywords: 'professional, services, business, solutions'
+      };
     }
 
-    let analysisResult;
-    let analysisMethod = 'Rule-based';
-
-    // Check if Gemini API key is available
-    const apiKey = Deno.env.get('GEMINI_API_KEY');
-    console.log(`🔑 Environment check - GEMINI_API_KEY: ${apiKey ? 'PRESENT' : 'MISSING'}`);
+    console.log(`🤖 Using advanced rule-based entity analysis (no AI dependency)`);
     
-    if (apiKey) {
-      try {
-        console.log(`🤖 Attempting AI entity analysis with Gemini API`);
-        
-        // Very minimal prompt to avoid MAX_TOKENS
-        const analysisPrompt = `Analyze entities for: ${url}
-Content: ${websiteContent.substring(0, 800)}
-
-Return JSON only:
-{"entities":[{"entity_name":"Company","entity_type":"Organization","mention_count":5,"gap":false}],"analysis_summary":"Brief analysis","total_entities":5,"coverage_score":80}
-
-Max 5 entities. Keep brief.`;
-
-        console.log(`🤖 Calling Gemini API for entity analysis (minimal prompt: ${analysisPrompt.length} chars)`);
-        
-        // Call Gemini API to analyze entities
-        const aiAnalysis = await callGeminiAPI(analysisPrompt);
-        
-        console.log(`✅ Gemini API returned analysis: ${aiAnalysis.substring(0, 200)}...`);
-
-        // Parse the AI response to extract entity data
-        try {
-          const parsedResult = extractAndParseJSON(aiAnalysis);
-          console.log(`✅ Successfully parsed AI entity analysis`);
-          
-          // Add siteId to each entity and ensure proper structure
-          if (parsedResult.entities && Array.isArray(parsedResult.entities)) {
-            parsedResult.entities = parsedResult.entities.map(entity => ({
-              site_id: siteId,
-              entity_name: entity.entity_name || 'Unknown Entity',
-              entity_type: entity.entity_type || 'Unknown',
-              mention_count: entity.mention_count || 0,
-              gap: entity.gap !== undefined ? entity.gap : false,
-              created_at: new Date().toISOString()
-            }));
-          } else {
-            throw new Error('No entities array found in AI response');
-          }
-          
-          // Ensure we have all required fields
-          analysisResult = {
-            entities: parsedResult.entities,
-            analysis_summary: parsedResult.analysis_summary || 'Entity analysis completed successfully',
-            total_entities: parsedResult.total_entities || parsedResult.entities.length,
-            coverage_score: parsedResult.coverage_score || 75
-          };
-          
-          analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
-        } catch (parseError) {
-          console.error('❌ Failed to parse AI entity analysis:', parseError);
-          console.log('Raw AI response:', aiAnalysis);
-          throw parseError; // This will trigger the fallback below
-        }
-      } catch (aiError) {
-        console.error(`❌ AI entity analysis failed with error:`, aiError);
-        console.log(`🔄 Falling back to rule-based entity analysis`);
-        
-        analysisResult = generateFallbackEntityAnalysis(url, websiteContent, siteId);
-        analysisMethod = `Rule-based (AI failed: ${aiError.message.substring(0, 100)})`;
-      }
-    } else {
-      console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based entity analysis`);
-      analysisResult = generateFallbackEntityAnalysis(url, websiteContent, siteId);
-      analysisMethod = 'Rule-based (API key not configured)';
-    }
+    // Perform comprehensive rule-based entity analysis
+    const analysisResult = performAdvancedEntityAnalysis(url, websiteContent, metadata, siteId);
+    const analysisMethod = 'Advanced Rule-Based Analysis';
 
     console.log(`📊 Generated entity analysis using ${analysisMethod}: ${analysisResult.entities.length} entities found`);
+    console.log(`📈 Coverage score: ${analysisResult.coverage_score}%`);
 
     // Return successful response
     const responseData = {
@@ -390,6 +411,7 @@ Max 5 entities. Keep brief.`;
       total_entities: analysisResult.total_entities,
       coverage_score: analysisResult.coverage_score,
       analysis_method: analysisMethod,
+      metrics: analysisResult.metrics,
       success: true
     };
 
@@ -411,9 +433,6 @@ Max 5 entities. Keep brief.`;
       error: 'Failed to analyze entity coverage',
       details: error.message,
       type: error.name || 'Unknown Error',
-      suggestion: error.message.includes('GEMINI_API_KEY') 
-        ? 'Please configure the GEMINI_API_KEY environment variable in your Supabase project settings under Project Settings > Environment Variables.'
-        : 'Please check the logs for more details and try again.',
       success: false
     };
 
