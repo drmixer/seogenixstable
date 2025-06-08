@@ -316,7 +316,7 @@ const PromptMatchSuggestions = () => {
                 {/* Voice Search Queries */}
                 {renderSuggestionCategory(
                   'Voice Search Queries',
-                  suggestions.voice_search,
+                  suggestions.voice_search || [],
                   <MessageSquare className="h-4 w-4 text-indigo-600" />,
                   'Natural, conversational questions for voice assistants',
                   'voice-search'
@@ -325,7 +325,7 @@ const PromptMatchSuggestions = () => {
                 {/* FAQ Questions */}
                 {renderSuggestionCategory(
                   'FAQ Questions',
-                  suggestions.faq_questions,
+                  suggestions.faq_questions || [],
                   <Users className="h-4 w-4 text-indigo-600" />,
                   'Perfect for creating comprehensive FAQ sections',
                   'faq'
@@ -334,7 +334,7 @@ const PromptMatchSuggestions = () => {
                 {/* Headlines */}
                 {renderSuggestionCategory(
                   'AI-Optimized Headlines',
-                  suggestions.headlines,
+                  suggestions.headlines || [],
                   <TrendingUp className="h-4 w-4 text-indigo-600" />,
                   'Headlines optimized for AI understanding and engagement',
                   'headlines'
@@ -343,7 +343,7 @@ const PromptMatchSuggestions = () => {
                 {/* Featured Snippet Targets */}
                 {renderSuggestionCategory(
                   'Featured Snippet Targets',
-                  suggestions.featured_snippets,
+                  suggestions.featured_snippets || [],
                   <Target className="h-4 w-4 text-indigo-600" />,
                   'Questions likely to trigger featured snippets in search results',
                   'snippets'
@@ -352,7 +352,7 @@ const PromptMatchSuggestions = () => {
                 {/* Long-tail Keywords */}
                 {renderSuggestionCategory(
                   'Long-tail Keywords',
-                  suggestions.long_tail,
+                  suggestions.long_tail || [],
                   <Search className="h-4 w-4 text-indigo-600" />,
                   'Specific, longer phrases with high conversion potential',
                   'long-tail'
@@ -361,7 +361,7 @@ const PromptMatchSuggestions = () => {
                 {/* Comparison Queries */}
                 {renderSuggestionCategory(
                   'Comparison Queries',
-                  suggestions.comparisons,
+                  suggestions.comparisons || [],
                   <Building className="h-4 w-4 text-indigo-600" />,
                   'Comparison-style questions for competitive content',
                   'comparisons'
@@ -370,7 +370,7 @@ const PromptMatchSuggestions = () => {
                 {/* How-to Queries */}
                 {renderSuggestionCategory(
                   'How-to Queries',
-                  suggestions.how_to,
+                  suggestions.how_to || [],
                   <Lightbulb className="h-4 w-4 text-indigo-600" />,
                   'Step-by-step instructional queries for tutorial content',
                   'how-to'
