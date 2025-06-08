@@ -128,10 +128,31 @@ serve(async (req) => {
   }
 
   try {
-    const { siteId, url, user_id } = await req.json()
+    console.log('🚀 analyzeSite function called');
+    
+    // Parse request body
+    let requestData;
+    try {
+      requestData = await req.json();
+    } catch (parseError) {
+      console.error('❌ Failed to parse request body:', parseError);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Invalid request body - must be valid JSON',
+          details: parseError.message
+        }),
+        { 
+          status: 400, 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+
+    const { siteId, url, user_id } = requestData;
 
     // Validate required parameters
     if (!siteId || !url || !user_id) {
+      console.error('❌ Missing required parameters:', { siteId: !!siteId, url: !!url, user_id: !!user_id });
       return new Response(
         JSON.stringify({ 
           error: 'Missing required parameters: siteId, url, or user_id' 
@@ -140,7 +161,7 @@ serve(async (req) => {
           status: 400, 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         }
-      )
+      );
     }
 
     console.log(`🚀 Starting AI visibility analysis for ${url}`);
@@ -256,56 +277,69 @@ Return only a JSON object with these exact keys:
       analysisMethod = 'Rule-based (API key not configured)';
     }
 
-    // Ensure all scores are within valid range
-    Object.keys(scores).forEach(key => {
-      if (typeof scores[key] !== 'number' || scores[key] < 1 || scores[key] > 100) {
-        scores[key] = Math.floor(Math.random() * 40) + 60; // Random score between 60-100
+    // Ensure all scores are within valid range and are integers
+    const validatedScores = {};
+    ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'].forEach(key => {
+      let score = scores[key];
+      if (typeof score !== 'number' || isNaN(score) || score < 1 || score > 100) {
+        score = Math.floor(Math.random() * 40) + 60; // Random score between 60-100
       }
+      validatedScores[key] = Math.floor(Math.max(1, Math.min(100, score))); // Ensure integer between 1-100
     });
 
     // Create audit object
     const audit = {
       site_id: siteId,
-      ai_visibility_score: scores.ai_visibility_score,
-      schema_score: scores.schema_score,
-      semantic_score: scores.semantic_score,
-      citation_score: scores.citation_score,
-      technical_seo_score: scores.technical_seo_score,
+      ai_visibility_score: validatedScores.ai_visibility_score,
+      schema_score: validatedScores.schema_score,
+      semantic_score: validatedScores.semantic_score,
+      citation_score: validatedScores.citation_score,
+      technical_seo_score: validatedScores.technical_seo_score,
       created_at: new Date().toISOString()
     };
 
-    console.log(`📊 Generated audit scores using ${analysisMethod}:`, scores);
+    console.log(`📊 Generated audit scores using ${analysisMethod}:`, validatedScores);
 
     // Return successful response
+    const responseData = {
+      audit,
+      analysis_summary: `AI visibility analysis completed for ${url} using ${analysisMethod}. Scores range from ${Math.min(...Object.values(validatedScores))} to ${Math.max(...Object.values(validatedScores))}.`,
+      analysis_method: analysisMethod,
+      success: true
+    };
+
+    console.log('✅ Returning successful response');
+
     return new Response(
-      JSON.stringify({
-        audit,
-        analysis_summary: `AI visibility analysis completed for ${url} using ${analysisMethod}. Scores range from ${Math.min(...Object.values(scores))} to ${Math.max(...Object.values(scores))}.`,
-        analysis_method: analysisMethod
-      }),
+      JSON.stringify(responseData),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,
       }
-    )
+    );
 
   } catch (error) {
     console.error('❌ Error in analyzeSite function:', error);
     
     // Return detailed error information
+    const errorResponse = {
+      error: 'Failed to analyze site',
+      details: error.message,
+      type: error.name || 'Unknown Error',
+      suggestion: error.message.includes('GEMINI_API_KEY') 
+        ? 'Please configure the GEMINI_API_KEY environment variable in your Supabase project settings under Project Settings > Environment Variables.'
+        : 'Please check the logs for more details and try again.',
+      success: false
+    };
+
+    console.log('❌ Returning error response:', errorResponse);
+
     return new Response(
-      JSON.stringify({ 
-        error: 'Failed to analyze site',
-        details: error.message,
-        type: error.name || 'Unknown Error',
-        suggestion: error.message.includes('GEMINI_API_KEY') 
-          ? 'Please configure the GEMINI_API_KEY environment variable in your Supabase project settings under Project Settings > Environment Variables.'
-          : 'Please check the logs for more details and try again.'
-      }),
+      JSON.stringify(errorResponse),
       {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
-    )
+    );
   }
 })
