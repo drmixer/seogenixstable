@@ -35,7 +35,7 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with comprehensive error handling
+// Helper function to call Gemini API with the EXACT structure handling from the error
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
@@ -103,74 +103,71 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     console.log(`✅ Gemini API response received`);
     console.log(`📋 Response structure keys:`, Object.keys(data));
     
-    // Enhanced response handling with the EXACT structure from the error
+    // Handle the EXACT structure from the error: {content, finishReason, index}
     let responseText = '';
     
-    // Method 1: Standard candidates structure
     if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
       console.log(`📝 Found candidates array with ${data.candidates.length} items`);
       const candidate = data.candidates[0];
-      console.log(`📋 Candidate keys:`, Object.keys(candidate));
+      console.log(`📋 Candidate available keys:`, Object.keys(candidate));
       
-      // NEW: Handle the exact structure from the error message
-      // The error shows: "Available keys: content, finishReason, index"
+      // The error message shows: "Available keys: content, finishReason, index"
+      // So we need to handle this exact structure
       if (candidate.content) {
-        console.log(`📋 Content structure:`, typeof candidate.content, Object.keys(candidate.content || {}));
+        console.log(`📋 Content type:`, typeof candidate.content);
+        console.log(`📋 Content structure:`, candidate.content);
         
-        // Check if content has parts array
-        if (candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
-          responseText = candidate.content.parts[0].text;
-          console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
-        }
-        // Check if content has direct text property
-        else if (candidate.content.text) {
-          responseText = candidate.content.text;
-          console.log(`✅ Successfully extracted text from candidates[0].content.text`);
-        }
-        // Check if content is a string itself
-        else if (typeof candidate.content === 'string') {
+        // Handle different content structures
+        if (typeof candidate.content === 'string') {
+          // Content is directly a string
           responseText = candidate.content;
-          console.log(`✅ Successfully extracted text from candidates[0].content (string)`);
-        }
-        // Check if content has other text-like properties
-        else {
-          const contentKeys = Object.keys(candidate.content || {});
-          console.log(`🔍 Content has keys:`, contentKeys);
-          
-          // Try to find any text-like property in content
-          const textProps = ['text', 'message', 'response', 'output', 'result'];
-          let found = false;
-          for (const prop of textProps) {
-            if (candidate.content[prop] && typeof candidate.content[prop] === 'string') {
-              responseText = candidate.content[prop];
-              console.log(`✅ Successfully extracted text from candidates[0].content.${prop}`);
-              found = true;
-              break;
+          console.log(`✅ Successfully extracted text from candidates[0].content (direct string)`);
+        } else if (candidate.content && typeof candidate.content === 'object') {
+          // Content is an object, check for parts array
+          if (candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
+            if (candidate.content.parts[0].text) {
+              responseText = candidate.content.parts[0].text;
+              console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
+            } else {
+              console.log(`📋 Parts[0] structure:`, Object.keys(candidate.content.parts[0]));
+              // Try other possible text properties in parts[0]
+              const part = candidate.content.parts[0];
+              if (part.content) responseText = part.content;
+              else if (part.message) responseText = part.message;
+              else if (part.response) responseText = part.response;
+              else {
+                throw new Error(`No text found in parts[0]. Available keys: ${Object.keys(part).join(', ')}`);
+              }
+              console.log(`✅ Successfully extracted text from alternative parts[0] property`);
+            }
+          } else if (candidate.content.text) {
+            // Content object has direct text property
+            responseText = candidate.content.text;
+            console.log(`✅ Successfully extracted text from candidates[0].content.text`);
+          } else {
+            // Log the content structure and try to find any text-like property
+            console.log(`📋 Content object keys:`, Object.keys(candidate.content));
+            const textProps = ['message', 'response', 'output', 'result', 'generated_text'];
+            let found = false;
+            for (const prop of textProps) {
+              if (candidate.content[prop] && typeof candidate.content[prop] === 'string') {
+                responseText = candidate.content[prop];
+                console.log(`✅ Successfully extracted text from candidates[0].content.${prop}`);
+                found = true;
+                break;
+              }
+            }
+            if (!found) {
+              throw new Error(`No text found in content object. Available keys: ${Object.keys(candidate.content).join(', ')}`);
             }
           }
-          
-          if (!found) {
-            throw new Error(`Invalid content structure in Gemini API response. Content keys: ${contentKeys.join(', ')}`);
-          }
+        } else {
+          throw new Error(`Unexpected content type: ${typeof candidate.content}`);
         }
-      }
-      // Fallback: check for direct text properties on candidate
-      else if (candidate.text) {
-        responseText = candidate.text;
-        console.log(`✅ Successfully extracted text from candidates[0].text`);
-      } else if (candidate.output) {
-        responseText = candidate.output;
-        console.log(`✅ Successfully extracted text from candidates[0].output`);
-      } else if (candidate.message) {
-        responseText = candidate.message;
-        console.log(`✅ Successfully extracted text from candidates[0].message`);
       } else {
-        // Log the full candidate structure for debugging
-        console.error(`❌ Unexpected candidate structure:`, JSON.stringify(candidate, null, 2));
-        
-        // Try to find any text-like property in the candidate
-        const candidateKeys = Object.keys(candidate);
-        const textProps = ['response', 'result', 'generated_text', 'completion'];
+        // No content property, check for other text properties on candidate
+        console.log(`❌ No content property found. Candidate keys: ${Object.keys(candidate).join(', ')}`);
+        const textProps = ['text', 'message', 'response', 'output', 'result'];
         let found = false;
         for (const prop of textProps) {
           if (candidate[prop] && typeof candidate[prop] === 'string') {
@@ -180,44 +177,16 @@ async function callGeminiAPI(prompt: string): Promise<string> {
             break;
           }
         }
-        
         if (!found) {
-          throw new Error(`Invalid candidate structure in Gemini API response. Available keys: ${candidateKeys.join(', ')}`);
+          throw new Error(`Invalid candidate structure in Gemini API response. Available keys: ${Object.keys(candidate).join(', ')}`);
         }
       }
-    } 
-    // Method 2: Direct text property
-    else if (data.text) {
-      responseText = data.text;
-      console.log(`✅ Successfully extracted text from data.text`);
-    } 
-    // Method 3: Content property
-    else if (data.content) {
-      responseText = data.content;
-      console.log(`✅ Successfully extracted text from data.content`);
-    }
-    // Method 4: Output property
-    else if (data.output) {
-      responseText = data.output;
-      console.log(`✅ Successfully extracted text from data.output`);
-    }
-    // Method 5: Response property
-    else if (data.response) {
-      responseText = data.response;
-      console.log(`✅ Successfully extracted text from data.response`);
-    }
-    // Method 6: Check if data itself is a string
-    else if (typeof data === 'string') {
-      responseText = data;
-      console.log(`✅ Successfully extracted text from data (string)`);
-    }
-    // Method 7: Look for any text-like property
-    else {
-      const dataKeys = Object.keys(data);
-      const textProperties = ['message', 'result', 'generated_text', 'completion'];
+    } else {
+      // No candidates array, try other top-level properties
+      console.log(`❌ No candidates array found. Data keys: ${Object.keys(data).join(', ')}`);
+      const textProps = ['text', 'content', 'message', 'response', 'output', 'result'];
       let found = false;
-      
-      for (const prop of textProperties) {
+      for (const prop of textProps) {
         if (data[prop] && typeof data[prop] === 'string') {
           responseText = data[prop];
           console.log(`✅ Successfully extracted text from data.${prop}`);
@@ -225,11 +194,8 @@ async function callGeminiAPI(prompt: string): Promise<string> {
           break;
         }
       }
-      
       if (!found) {
-        console.error(`❌ Unrecognized Gemini API response structure. Available keys:`, dataKeys);
-        console.error(`❌ Full response:`, JSON.stringify(data, null, 2));
-        throw new Error(`Unrecognized response structure from Gemini API. Available keys: ${dataKeys.join(', ')}`);
+        throw new Error(`Unrecognized response structure from Gemini API. Available keys: ${Object.keys(data).join(', ')}`);
       }
     }
 
