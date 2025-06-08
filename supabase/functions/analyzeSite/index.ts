@@ -35,11 +35,10 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with proper error handling
+// Helper function to call Gemini API
 async function callGeminiAPI(prompt: string): Promise<string> {
-  console.log(`🔑 Starting Gemini API call...`);
-  
   const apiKey = Deno.env.get('GEMINI_API_KEY');
+  
   console.log(`🔑 API Key check: ${apiKey ? `Present (${apiKey.substring(0, 10)}...)` : 'NOT FOUND'}`);
   
   if (!apiKey) {
@@ -47,7 +46,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   }
 
   const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-  console.log(`🌐 Making request to Gemini 2.5 Flash Preview`);
+  console.log(`🌐 Making request to: ${apiUrl.replace(apiKey, 'HIDDEN_KEY')}`);
 
   const requestBody = {
     contents: [{
@@ -56,7 +55,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       }]
     }],
     generationConfig: {
-      temperature: 0.3,
+      temperature: 0.1,
       topK: 40,
       topP: 0.95,
       maxOutputTokens: 1024,
@@ -66,7 +65,6 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters`);
 
   try {
-    console.log(`📡 Sending request to Gemini API...`);
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -75,7 +73,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       body: JSON.stringify(requestBody)
     });
 
-    console.log(`📥 Response received - Status: ${response.status} ${response.statusText}`);
+    console.log(`📥 Response status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -84,52 +82,131 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     }
 
     const data = await response.json();
-    console.log(`✅ Gemini API response parsed successfully`);
-    console.log(`📋 Full response structure for debugging:`, JSON.stringify(data, null, 2));
+    console.log(`✅ Gemini API response received`);
+    console.log(`📋 Full response structure:`, JSON.stringify(data, null, 2));
     
-    // Handle the response structure properly with multiple fallbacks
+    // Handle different possible response structures
+    let responseText = '';
+    
     if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
+      console.log(`📝 Found candidates array with ${data.candidates.length} items`);
       const candidate = data.candidates[0];
-      console.log(`📝 Candidate structure:`, JSON.stringify(candidate, null, 2));
       
-      // Try different possible structures
       if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
-        const responseText = candidate.content.parts[0].text;
-        console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text (${responseText.length} chars)`);
-        return responseText;
-      } else if (candidate.text) {
-        // Alternative structure
-        console.log(`✅ Successfully extracted text from candidates[0].text`);
-        return candidate.text;
-      } else if (candidate.output) {
-        // Another alternative structure
-        console.log(`✅ Successfully extracted text from candidates[0].output`);
-        return candidate.output;
+        responseText = candidate.content.parts[0].text;
+        console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
       } else {
-        console.error(`❌ Unexpected candidate structure:`, JSON.stringify(candidate, null, 2));
-        throw new Error('Unexpected candidate structure in Gemini API response');
+        console.error(`❌ Invalid candidate structure:`, JSON.stringify(candidate, null, 2));
+        throw new Error('Invalid candidate structure in Gemini API response');
       }
     } else if (data.text) {
-      // Direct text response
+      // Alternative response structure
+      responseText = data.text;
       console.log(`✅ Successfully extracted text from data.text`);
-      return data.text;
     } else if (data.content) {
-      // Direct content response
+      // Another alternative structure
+      responseText = data.content;
       console.log(`✅ Successfully extracted text from data.content`);
-      return data.content;
     } else {
       console.error(`❌ Unrecognized Gemini API response structure:`, JSON.stringify(data, null, 2));
       throw new Error('Unrecognized response structure from Gemini API');
     }
+
+    if (!responseText || responseText.trim().length === 0) {
+      throw new Error('Empty response text from Gemini API');
+    }
+
+    console.log(`📝 Gemini response length: ${responseText.length} characters`);
+    console.log(`📝 Response preview: ${responseText.substring(0, 200)}...`);
+    
+    return responseText;
   } catch (fetchError) {
     console.error(`❌ Fetch error calling Gemini API:`, fetchError);
-    console.error(`❌ Error details:`, {
-      name: fetchError.name,
-      message: fetchError.message,
-      stack: fetchError.stack
-    });
     throw fetchError;
   }
+}
+
+// Helper function to extract and parse JSON from AI response
+function extractAndParseJSON(aiResponse: string): any {
+  console.log(`🔍 Attempting to extract JSON from AI response: ${aiResponse.substring(0, 300)}...`);
+  
+  // Try multiple approaches to extract JSON
+  const jsonExtractionMethods = [
+    // Method 1: Look for JSON block with ```json
+    () => {
+      const jsonBlockMatch = aiResponse.match(/```json\s*([\s\S]*?)\s*```/i);
+      return jsonBlockMatch ? jsonBlockMatch[1].trim() : null;
+    },
+    
+    // Method 2: Look for JSON block with ```
+    () => {
+      const codeBlockMatch = aiResponse.match(/```\s*([\s\S]*?)\s*```/);
+      return codeBlockMatch ? codeBlockMatch[1].trim() : null;
+    },
+    
+    // Method 3: Look for any JSON-like structure
+    () => {
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      return jsonMatch ? jsonMatch[0] : null;
+    },
+    
+    // Method 4: Try to find scores in the text and construct JSON
+    () => {
+      const scores = {};
+      const scorePatterns = [
+        /ai[_\s]*visibility[_\s]*score[:\s]*(\d+)/i,
+        /schema[_\s]*score[:\s]*(\d+)/i,
+        /semantic[_\s]*score[:\s]*(\d+)/i,
+        /citation[_\s]*score[:\s]*(\d+)/i,
+        /technical[_\s]*seo[_\s]*score[:\s]*(\d+)/i
+      ];
+      
+      const scoreKeys = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
+      
+      scorePatterns.forEach((pattern, index) => {
+        const match = aiResponse.match(pattern);
+        if (match) {
+          scores[scoreKeys[index]] = parseInt(match[1]);
+        }
+      });
+      
+      return Object.keys(scores).length === 5 ? JSON.stringify(scores) : null;
+    }
+  ];
+  
+  for (let i = 0; i < jsonExtractionMethods.length; i++) {
+    try {
+      const extractedJson = jsonExtractionMethods[i]();
+      if (extractedJson) {
+        console.log(`🎯 Method ${i + 1} extracted: ${extractedJson}`);
+        
+        // Clean up the JSON string
+        let cleanJson = extractedJson
+          .replace(/^\s*```json\s*/i, '')
+          .replace(/^\s*```\s*/, '')
+          .replace(/\s*```\s*$/, '')
+          .trim();
+        
+        // Try to parse the JSON
+        const parsed = JSON.parse(cleanJson);
+        
+        // Validate that all required keys are present
+        const requiredKeys = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
+        const missingKeys = requiredKeys.filter(key => !(key in parsed));
+        
+        if (missingKeys.length === 0) {
+          console.log(`✅ Successfully parsed JSON with method ${i + 1}:`, parsed);
+          return parsed;
+        } else {
+          console.warn(`⚠️ Method ${i + 1} missing keys: ${missingKeys.join(', ')}`);
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️ Method ${i + 1} failed:`, error.message);
+    }
+  }
+  
+  throw new Error('Could not extract valid JSON from AI response');
 }
 
 // Helper function to generate fallback scores based on basic analysis
@@ -267,101 +344,68 @@ serve(async (req) => {
     }
 
     let scores;
-    let analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
+    let analysisMethod = 'AI-powered';
 
-    // Check if Gemini API key is available and try to use it
+    // Check if Gemini API key is available
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     console.log(`🔑 Environment check - GEMINI_API_KEY: ${apiKey ? 'PRESENT' : 'MISSING'}`);
     
-    if (apiKey && apiKey.trim().length > 0) {
+    if (apiKey) {
       try {
-        console.log(`🤖 Attempting AI analysis with Gemini 2.5 Flash Preview`);
+        console.log(`🤖 Attempting AI analysis with Gemini API`);
         
-        // Prepare a more structured prompt for better JSON response
-        const analysisPrompt = `You are an AI visibility analysis expert. Analyze this website and provide scores from 1-100 for each category.
+        // Prepare the prompt for AI analysis with very specific instructions
+        const analysisPrompt = `You are an AI visibility expert. Analyze this website and provide ONLY a JSON object with scores from 1-100.
 
 Website URL: ${url}
 Title: ${metadata.title || 'Not available'}
 Meta Description: ${metadata.description || 'Not available'}
 Has Structured Data: ${hasStructuredData}
-Content Preview: ${websiteContent.substring(0, 2000)}
+Content: ${websiteContent}
 
-Provide scores (1-100) for these categories:
-1. AI Visibility Score - How visible this content is to AI systems
-2. Schema Score - Quality of structured data implementation
+Analyze and provide scores (1-100) for:
+1. AI Visibility Score - Overall visibility to AI systems
+2. Schema Score - Structured data implementation
 3. Semantic Score - Content clarity and semantic structure
-4. Citation Score - Likelihood of being cited by AI systems
+4. Citation Score - Likelihood of being cited by AI
 5. Technical SEO Score - Technical optimization factors
 
-Respond with ONLY a valid JSON object in this exact format:
+IMPORTANT: Return ONLY this JSON object, no other text:
+
 {
-  "ai_visibility_score": 85,
-  "schema_score": 75,
-  "semantic_score": 90,
-  "citation_score": 80,
-  "technical_seo_score": 88
+  "ai_visibility_score": [number 1-100],
+  "schema_score": [number 1-100],
+  "semantic_score": [number 1-100],
+  "citation_score": [number 1-100],
+  "technical_seo_score": [number 1-100]
 }`;
 
         console.log(`🤖 Calling Gemini API for site analysis`);
-        console.log(`📝 Prompt length: ${analysisPrompt.length} characters`);
         
         // Call Gemini API to analyze the site
         const aiAnalysis = await callGeminiAPI(analysisPrompt);
         
         console.log(`✅ Gemini API returned analysis: ${aiAnalysis.substring(0, 200)}...`);
 
-        // Parse the AI response to extract scores
+        // Parse the AI response to extract scores using improved method
         try {
-          console.log(`🔍 Starting JSON parsing process...`);
-          
-          // Clean the response and extract JSON
-          let jsonString = aiAnalysis.trim();
-          console.log(`📝 Original response length: ${jsonString.length}`);
-          
-          // Remove markdown code blocks if present
-          jsonString = jsonString.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-          console.log(`📝 After markdown removal: ${jsonString.substring(0, 100)}...`);
-          
-          // Try to extract JSON from the response
-          const jsonMatch = jsonString.match(/\{[\s\S]*?\}/);
-          if (jsonMatch) {
-            jsonString = jsonMatch[0];
-            console.log(`📝 Extracted JSON string: ${jsonString}`);
-          } else {
-            console.warn(`⚠️ No JSON pattern found in response, trying to parse entire response`);
-          }
-          
-          console.log(`🔍 Attempting to parse JSON: ${jsonString}`);
-          scores = JSON.parse(jsonString);
+          scores = extractAndParseJSON(aiAnalysis);
           console.log(`✅ Successfully parsed AI scores:`, scores);
-          
-          // Validate that all required keys are present and are numbers
-          const requiredKeys = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
-          const missingKeys = requiredKeys.filter(key => !(key in scores) || typeof scores[key] !== 'number');
-          
-          if (missingKeys.length > 0) {
-            console.warn(`⚠️ Missing or invalid keys in AI response: ${missingKeys.join(', ')}`);
-            throw new Error(`Missing or invalid required keys: ${missingKeys.join(', ')}`);
-          }
-          
-          analysisMethod = 'AI-powered (Gemini 2.5 Flash Preview)';
-          console.log(`✅ AI analysis successful with Gemini 2.5 Flash Preview`);
-          
+          analysisMethod = 'AI-powered (Gemini 2.5 Flash)';
         } catch (parseError) {
           console.error('❌ Failed to parse AI analysis:', parseError);
-          console.log('Raw AI response for debugging:', aiAnalysis);
+          console.log('Raw AI response:', aiAnalysis);
           throw parseError; // This will trigger the fallback below
         }
       } catch (aiError) {
         console.error(`❌ AI analysis failed with error:`, aiError);
-        console.error(`❌ Error type: ${aiError.name}, Message: ${aiError.message}`);
         console.log(`🔄 Falling back to rule-based analysis`);
         
         scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
         analysisMethod = `Rule-based (AI failed: ${aiError.message})`;
       }
     } else {
-      console.log(`⚠️ GEMINI_API_KEY not configured or empty, using rule-based analysis`);
+      console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based analysis`);
       scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
       analysisMethod = 'Rule-based (API key not configured)';
     }
