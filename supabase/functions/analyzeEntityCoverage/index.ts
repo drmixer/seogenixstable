@@ -17,8 +17,8 @@ function extractTextFromHTML(html: string): string {
   // Clean up whitespace
   text = text.replace(/\s+/g, ' ').trim();
   
-  // Limit to first 2000 characters to stay well within API limits
-  return text.substring(0, 2000);
+  // Limit to first 1000 characters to stay well within API limits
+  return text.substring(0, 1000);
 }
 
 // Helper function to extract metadata from HTML
@@ -35,7 +35,7 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API with reduced token limit
+// Helper function to call Gemini API with very conservative token limit
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
@@ -56,9 +56,9 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     }],
     generationConfig: {
       temperature: 0.1,
-      topK: 20,
-      topP: 0.8,
-      maxOutputTokens: 512, // Reduced from 2048 to avoid MAX_TOKENS error
+      topK: 10,
+      topP: 0.5,
+      maxOutputTokens: 256, // Very conservative limit to avoid MAX_TOKENS
     },
     safetySettings: [
       {
@@ -80,7 +80,7 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     ]
   };
 
-  console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters, maxTokens: 512`);
+  console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters, maxTokens: 256`);
 
   try {
     const response = await fetch(apiUrl, {
@@ -101,7 +101,6 @@ async function callGeminiAPI(prompt: string): Promise<string> {
 
     const data = await response.json();
     console.log(`✅ Gemini API response received`);
-    console.log(`📋 Full response structure:`, JSON.stringify(data, null, 2));
     
     // Enhanced response handling for the specific error case
     let responseText = '';
@@ -109,123 +108,27 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     if (data.candidates && Array.isArray(data.candidates) && data.candidates.length > 0) {
       console.log(`📝 Found candidates array with ${data.candidates.length} items`);
       const candidate = data.candidates[0];
-      console.log(`📋 Candidate keys:`, Object.keys(candidate));
       
       // Check for blocked content or safety issues
       if (candidate.finishReason && candidate.finishReason !== 'STOP') {
         console.warn(`⚠️ Candidate finished with reason: ${candidate.finishReason}`);
-        if (candidate.finishReason === 'SAFETY') {
-          throw new Error('Content was blocked by safety filters. Try rephrasing your request.');
-        } else if (candidate.finishReason === 'RECITATION') {
-          throw new Error('Content was blocked due to recitation concerns.');
-        } else if (candidate.finishReason === 'MAX_TOKENS') {
+        if (candidate.finishReason === 'MAX_TOKENS') {
           throw new Error('Content generation stopped: MAX_TOKENS - Response was too long. Using fallback analysis.');
+        } else if (candidate.finishReason === 'SAFETY') {
+          throw new Error('Content was blocked by safety filters. Using fallback analysis.');
         } else {
-          throw new Error(`Content generation stopped: ${candidate.finishReason}`);
+          throw new Error(`Content generation stopped: ${candidate.finishReason}. Using fallback analysis.`);
         }
       }
       
-      if (candidate.content) {
-        console.log(`📋 Content type:`, typeof candidate.content);
-        console.log(`📋 Content keys:`, Object.keys(candidate.content));
-        
-        // Handle the specific case where content only has 'role' property
-        if (candidate.content.role && Object.keys(candidate.content).length === 1) {
-          console.error(`❌ Content object only contains 'role' property: ${candidate.content.role}`);
-          throw new Error(`No text content found - response only contains role: ${candidate.content.role}. This may indicate the content was filtered or blocked.`);
-        }
-        
-        // Handle different content structures
-        if (typeof candidate.content === 'string') {
-          responseText = candidate.content;
-          console.log(`✅ Successfully extracted text from candidates[0].content (direct string)`);
-        } else if (candidate.content && typeof candidate.content === 'object') {
-          // Content is an object, check for parts array
-          if (candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
-            const part = candidate.content.parts[0];
-            console.log(`📋 Parts[0] keys:`, Object.keys(part));
-            
-            if (part.text) {
-              responseText = part.text;
-              console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
-            } else {
-              // Try other possible text properties in parts[0]
-              const textProps = ['content', 'message', 'response', 'output', 'result'];
-              let found = false;
-              for (const prop of textProps) {
-                if (part[prop] && typeof part[prop] === 'string') {
-                  responseText = part[prop];
-                  console.log(`✅ Successfully extracted text from parts[0].${prop}`);
-                  found = true;
-                  break;
-                }
-              }
-              if (!found) {
-                throw new Error(`No text found in parts[0]. Available keys: ${Object.keys(part).join(', ')}`);
-              }
-            }
-          } else if (candidate.content.text) {
-            responseText = candidate.content.text;
-            console.log(`✅ Successfully extracted text from candidates[0].content.text`);
-          } else {
-            // Log the content structure and try to find any text-like property
-            console.log(`📋 Content object keys:`, Object.keys(candidate.content));
-            const textProps = ['message', 'response', 'output', 'result', 'generated_text'];
-            let found = false;
-            for (const prop of textProps) {
-              if (candidate.content[prop] && typeof candidate.content[prop] === 'string') {
-                responseText = candidate.content[prop];
-                console.log(`✅ Successfully extracted text from candidates[0].content.${prop}`);
-                found = true;
-                break;
-              }
-            }
-            if (!found) {
-              throw new Error(`No text found in content object. Available keys: ${Object.keys(candidate.content).join(', ')}`);
-            }
-          }
-        } else {
-          throw new Error(`Unexpected content type: ${typeof candidate.content}`);
-        }
+      if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
+        responseText = candidate.content.parts[0].text;
+        console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
       } else {
-        // No content property, check for other text properties on candidate
-        console.log(`❌ No content property found. Candidate keys: ${Object.keys(candidate).join(', ')}`);
-        const textProps = ['text', 'message', 'response', 'output', 'result'];
-        let found = false;
-        for (const prop of textProps) {
-          if (candidate[prop] && typeof candidate[prop] === 'string') {
-            responseText = candidate[prop];
-            console.log(`✅ Successfully extracted text from candidates[0].${prop}`);
-            found = true;
-            break;
-          }
-        }
-        if (!found) {
-          throw new Error(`Invalid candidate structure. Available keys: ${Object.keys(candidate).join(', ')}`);
-        }
+        throw new Error('Invalid candidate structure in Gemini API response');
       }
     } else {
-      // No candidates array, try other top-level properties
-      console.log(`❌ No candidates array found. Data keys: ${Object.keys(data).join(', ')}`);
-      
-      // Check if there's an error in the response
-      if (data.error) {
-        throw new Error(`Gemini API error: ${data.error.message || JSON.stringify(data.error)}`);
-      }
-      
-      const textProps = ['text', 'content', 'message', 'response', 'output', 'result'];
-      let found = false;
-      for (const prop of textProps) {
-        if (data[prop] && typeof data[prop] === 'string') {
-          responseText = data[prop];
-          console.log(`✅ Successfully extracted text from data.${prop}`);
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        throw new Error(`Unrecognized response structure. Available keys: ${Object.keys(data).join(', ')}`);
-      }
+      throw new Error('No candidates found in Gemini API response');
     }
 
     if (!responseText || responseText.trim().length === 0) {
@@ -242,124 +145,22 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   }
 }
 
-// Helper function to extract and parse JSON from AI response with enhanced error handling
+// Helper function to extract and parse JSON from AI response
 function extractAndParseJSON(aiResponse: string): any {
-  console.log(`🔍 Attempting to extract JSON from AI response: ${aiResponse.substring(0, 300)}...`);
+  console.log(`🔍 Attempting to extract JSON from AI response: ${aiResponse.substring(0, 200)}...`);
   
   // Clean the response first
   let cleanResponse = aiResponse.trim();
   
-  // Remove common prefixes that might interfere
-  const prefixPatterns = [
-    /^Here's the JSON.*?:/i,
-    /^Here is the JSON.*?:/i,
-    /^The JSON.*?:/i,
-    /^JSON.*?:/i,
-    /^Based on.*?:/i,
-    /^Analysis.*?:/i,
-    /^Entity.*?:/i
-  ];
-  
-  prefixPatterns.forEach(pattern => {
-    cleanResponse = cleanResponse.replace(pattern, '');
-  });
-  
-  // Try multiple approaches to extract JSON
-  const jsonExtractionMethods = [
-    // Method 1: Look for JSON block with ```json
-    () => {
-      const jsonBlockMatch = cleanResponse.match(/```json\s*([\s\S]*?)\s*```/i);
-      return jsonBlockMatch ? jsonBlockMatch[1].trim() : null;
-    },
-    
-    // Method 2: Look for JSON block with ```
-    () => {
-      const codeBlockMatch = cleanResponse.match(/```\s*([\s\S]*?)\s*```/);
-      return codeBlockMatch ? codeBlockMatch[1].trim() : null;
-    },
-    
-    // Method 3: Look for the largest JSON-like structure
-    () => {
-      const jsonMatches = cleanResponse.match(/\{[\s\S]*?\}/g);
-      if (jsonMatches && jsonMatches.length > 0) {
-        return jsonMatches.reduce((longest, current) => 
-          current.length > longest.length ? current : longest
-        );
-      }
-      return null;
-    },
-    
-    // Method 4: Try to find JSON starting from first { to last }
-    () => {
-      const firstBrace = cleanResponse.indexOf('{');
-      const lastBrace = cleanResponse.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        return cleanResponse.substring(firstBrace, lastBrace + 1);
-      }
-      return null;
-    },
-    
-    // Method 5: Look for entities array and build JSON structure
-    () => {
-      const entitiesMatch = cleanResponse.match(/"entities"\s*:\s*\[([\s\S]*?)\]/i);
-      if (entitiesMatch) {
-        try {
-          const entitiesArray = JSON.parse(`[${entitiesMatch[1]}]`);
-          const summaryMatch = cleanResponse.match(/"analysis_summary"\s*:\s*"([^"]*?)"/i);
-          const totalMatch = cleanResponse.match(/"total_entities"\s*:\s*(\d+)/i);
-          const scoreMatch = cleanResponse.match(/"coverage_score"\s*:\s*(\d+)/i);
-          
-          return JSON.stringify({
-            entities: entitiesArray,
-            analysis_summary: summaryMatch ? summaryMatch[1] : "Entity analysis completed",
-            total_entities: totalMatch ? parseInt(totalMatch[1]) : entitiesArray.length,
-            coverage_score: scoreMatch ? parseInt(scoreMatch[1]) : 75
-          });
-        } catch (e) {
-          return null;
-        }
-      }
-      return null;
-    }
-  ];
-  
-  for (let i = 0; i < jsonExtractionMethods.length; i++) {
+  // Try to find JSON content
+  const jsonMatch = cleanResponse.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
     try {
-      const extractedJson = jsonExtractionMethods[i]();
-      if (extractedJson) {
-        console.log(`🎯 Method ${i + 1} extracted: ${extractedJson.substring(0, 300)}...`);
-        
-        // Clean up the JSON string
-        let cleanJson = extractedJson
-          .replace(/^\s*```json\s*/i, '')
-          .replace(/^\s*```\s*/, '')
-          .replace(/\s*```\s*$/, '')
-          .trim();
-        
-        // Fix common JSON issues
-        cleanJson = cleanJson
-          .replace(/,\s*}/g, '}')  // Remove trailing commas
-          .replace(/,\s*]/g, ']')  // Remove trailing commas in arrays
-          .replace(/([{,]\s*)(\w+):/g, '$1"$2":')  // Quote unquoted keys
-          .replace(/:\s*'([^']*)'/g, ': "$1"');  // Replace single quotes with double quotes
-        
-        // Try to parse the JSON
-        const parsed = JSON.parse(cleanJson);
-        
-        // Validate that we have a reasonable structure
-        if (typeof parsed === 'object' && parsed !== null) {
-          // Check if we have entities array
-          if (parsed.entities && Array.isArray(parsed.entities)) {
-            console.log(`✅ Successfully parsed JSON with method ${i + 1}: ${parsed.entities.length} entities found`);
-            return parsed;
-          } else if (Object.keys(parsed).length > 0) {
-            console.log(`✅ Successfully parsed JSON with method ${i + 1}:`, Object.keys(parsed));
-            return parsed;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn(`⚠️ Method ${i + 1} failed:`, error.message);
+      const parsed = JSON.parse(jsonMatch[0]);
+      console.log(`✅ Successfully parsed JSON`);
+      return parsed;
+    } catch (parseError) {
+      console.warn(`⚠️ JSON parse failed:`, parseError.message);
     }
   }
   
@@ -508,7 +309,7 @@ serve(async (req) => {
     }
 
     let analysisResult;
-    let analysisMethod = 'AI-powered';
+    let analysisMethod = 'Rule-based';
 
     // Check if Gemini API key is available
     const apiKey = Deno.env.get('GEMINI_API_KEY');
@@ -518,25 +319,16 @@ serve(async (req) => {
       try {
         console.log(`🤖 Attempting AI entity analysis with Gemini API`);
         
-        // Prepare a much more concise prompt to avoid MAX_TOKENS
-        const analysisPrompt = `Analyze this website for key business entities:
+        // Very minimal prompt to avoid MAX_TOKENS
+        const analysisPrompt = `Analyze entities for: ${url}
+Content: ${websiteContent.substring(0, 800)}
 
-URL: ${url}
-Content: ${websiteContent.substring(0, 1500)}
+Return JSON only:
+{"entities":[{"entity_name":"Company","entity_type":"Organization","mention_count":5,"gap":false}],"analysis_summary":"Brief analysis","total_entities":5,"coverage_score":80}
 
-Return JSON with 5-6 entities:
-{
-  "entities": [
-    {"entity_name": "Company Name", "entity_type": "Organization", "mention_count": 5, "gap": false}
-  ],
-  "analysis_summary": "Brief analysis",
-  "total_entities": 6,
-  "coverage_score": 80
-}
+Max 5 entities. Keep brief.`;
 
-Include: organization, services, technologies, concepts. Keep response under 400 tokens.`;
-
-        console.log(`🤖 Calling Gemini API for entity analysis (concise prompt: ${analysisPrompt.length} chars)`);
+        console.log(`🤖 Calling Gemini API for entity analysis (minimal prompt: ${analysisPrompt.length} chars)`);
         
         // Call Gemini API to analyze entities
         const aiAnalysis = await callGeminiAPI(analysisPrompt);
@@ -581,7 +373,7 @@ Include: organization, services, technologies, concepts. Keep response under 400
         console.log(`🔄 Falling back to rule-based entity analysis`);
         
         analysisResult = generateFallbackEntityAnalysis(url, websiteContent, siteId);
-        analysisMethod = `Rule-based (AI failed: ${aiError.message})`;
+        analysisMethod = `Rule-based (AI failed: ${aiError.message.substring(0, 100)})`;
       }
     } else {
       console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based entity analysis`);
