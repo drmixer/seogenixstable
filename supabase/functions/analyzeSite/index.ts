@@ -35,18 +35,27 @@ function extractMetadata(html: string): { title: string; description: string; ke
   return { title, description, keywords };
 }
 
-// Helper function to call Gemini API
+// Helper function to call Gemini API with improved error handling
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
-  console.log(`🔑 API Key check: ${apiKey ? `Present (${apiKey.substring(0, 10)}...)` : 'NOT FOUND'}`);
+  console.log(`🔑 Checking API Key availability...`);
   
   if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set. Please configure this in your Supabase project settings.');
+    console.error('❌ GEMINI_API_KEY environment variable is not set');
+    throw new Error('GEMINI_API_KEY environment variable is not set. Please configure this in your Supabase project settings under Project Settings > Edge Functions > Environment Variables.');
   }
 
-  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-  console.log(`🌐 Making request to: ${apiUrl.replace(apiKey, 'HIDDEN_KEY')}`);
+  // Validate API key format (should start with 'AIza')
+  if (!apiKey.startsWith('AIza')) {
+    console.error('❌ Invalid GEMINI_API_KEY format');
+    throw new Error('Invalid GEMINI_API_KEY format. Google API keys should start with "AIza".');
+  }
+
+  console.log(`✅ API Key found: ${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}`);
+
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  console.log(`🌐 Making request to Gemini API...`);
 
   const requestBody = {
     contents: [{
@@ -59,31 +68,64 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       topK: 40,
       topP: 0.95,
       maxOutputTokens: 1024,
-    }
+    },
+    safetySettings: [
+      {
+        category: "HARM_CATEGORY_HARASSMENT",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_HATE_SPEECH",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        threshold: "BLOCK_NONE"
+      },
+      {
+        category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+        threshold: "BLOCK_NONE"
+      }
+    ]
   };
 
   console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters`);
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     console.log(`📥 Response status: ${response.status} ${response.statusText}`);
 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`❌ Gemini API error response: ${errorText}`);
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+      
+      // Parse error for more specific messages
+      try {
+        const errorData = JSON.parse(errorText);
+        if (errorData.error) {
+          throw new Error(`Gemini API error: ${errorData.error.message || errorData.error.status || 'Unknown error'}`);
+        }
+      } catch (parseError) {
+        // If we can't parse the error, use the raw text
+        throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+      }
     }
 
     const data = await response.json();
-    console.log(`✅ Gemini API response received`);
-    console.log(`📋 Full response structure:`, JSON.stringify(data, null, 2));
+    console.log(`✅ Gemini API response received successfully`);
     
     // Handle different possible response structures
     let responseText = '';
@@ -92,6 +134,12 @@ async function callGeminiAPI(prompt: string): Promise<string> {
       console.log(`📝 Found candidates array with ${data.candidates.length} items`);
       const candidate = data.candidates[0];
       
+      // Check if the candidate was blocked
+      if (candidate.finishReason === 'SAFETY') {
+        console.warn('⚠️ Response was blocked by safety filters');
+        throw new Error('Response was blocked by safety filters. Try rephrasing your request.');
+      }
+      
       if (candidate.content && candidate.content.parts && Array.isArray(candidate.content.parts) && candidate.content.parts.length > 0) {
         responseText = candidate.content.parts[0].text;
         console.log(`✅ Successfully extracted text from candidates[0].content.parts[0].text`);
@@ -99,17 +147,9 @@ async function callGeminiAPI(prompt: string): Promise<string> {
         console.error(`❌ Invalid candidate structure:`, JSON.stringify(candidate, null, 2));
         throw new Error('Invalid candidate structure in Gemini API response');
       }
-    } else if (data.text) {
-      // Alternative response structure
-      responseText = data.text;
-      console.log(`✅ Successfully extracted text from data.text`);
-    } else if (data.content) {
-      // Another alternative structure
-      responseText = data.content;
-      console.log(`✅ Successfully extracted text from data.content`);
     } else {
-      console.error(`❌ Unrecognized Gemini API response structure:`, JSON.stringify(data, null, 2));
-      throw new Error('Unrecognized response structure from Gemini API');
+      console.error(`❌ No candidates found in response:`, JSON.stringify(data, null, 2));
+      throw new Error('No candidates found in Gemini API response');
     }
 
     if (!responseText || responseText.trim().length === 0) {
@@ -121,6 +161,10 @@ async function callGeminiAPI(prompt: string): Promise<string> {
     
     return responseText;
   } catch (fetchError) {
+    if (fetchError.name === 'AbortError') {
+      console.error(`❌ Request timeout after 30 seconds`);
+      throw new Error('Request to Gemini API timed out. Please try again.');
+    }
     console.error(`❌ Fetch error calling Gemini API:`, fetchError);
     throw fetchError;
   }
@@ -263,7 +307,7 @@ serve(async (req) => {
     let scores;
     let analysisMethod = 'AI-powered';
 
-    // Check if Gemini API key is available
+    // Check if Gemini API key is available and try AI analysis first
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     console.log(`🔑 Environment check - GEMINI_API_KEY: ${apiKey ? 'PRESENT' : 'MISSING'}`);
     
@@ -272,22 +316,30 @@ serve(async (req) => {
         console.log(`🤖 Attempting AI analysis with Gemini API`);
         
         // Prepare the prompt for AI analysis
-        const analysisPrompt = `Analyze this website for AI visibility and provide scores from 1-100 for each category:
+        const analysisPrompt = `You are an AI visibility expert analyzing a website. Please analyze this website and provide scores from 1-100 for each category.
 
 Website URL: ${url}
 Title: ${metadata.title || 'Not available'}
 Meta Description: ${metadata.description || 'Not available'}
 Has Structured Data: ${hasStructuredData}
-Content: ${websiteContent}
+Content Preview: ${websiteContent.substring(0, 2000)}
 
-Please analyze and provide scores (1-100) for:
-1. AI Visibility Score - Overall visibility to AI systems
-2. Schema Score - Structured data implementation
-3. Semantic Score - Content clarity and semantic structure
-4. Citation Score - Likelihood of being cited by AI
-5. Technical SEO Score - Technical optimization factors
+Please analyze and provide scores (1-100) for these categories:
 
-Return only a JSON object with these exact keys:
+1. AI Visibility Score - How well can AI systems understand and process this content?
+2. Schema Score - Quality of structured data implementation
+3. Semantic Score - Content clarity and semantic structure for AI understanding
+4. Citation Score - Likelihood of being cited by AI systems based on content quality and authority
+5. Technical SEO Score - Technical optimization factors that affect AI crawling
+
+Consider factors like:
+- Content quality and depth
+- Structured data presence
+- Semantic clarity
+- Authority signals
+- Technical implementation
+
+Return ONLY a valid JSON object with these exact keys (no additional text):
 {
   "ai_visibility_score": number,
   "schema_score": number,
@@ -305,27 +357,41 @@ Return only a JSON object with these exact keys:
 
         // Parse the AI response to extract scores
         try {
+          // Clean the response and try to extract JSON
+          let cleanedResponse = aiAnalysis.trim();
+          
+          // Remove any markdown code blocks
+          cleanedResponse = cleanedResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+          
           // Try to extract JSON from the response
-          const jsonMatch = aiAnalysis.match(/\{[\s\S]*?\}/);
+          const jsonMatch = cleanedResponse.match(/\{[\s\S]*?\}/);
           if (jsonMatch) {
             const jsonString = jsonMatch[0];
             console.log(`🔍 Attempting to parse JSON: ${jsonString}`);
             scores = JSON.parse(jsonString);
             console.log(`✅ Successfully parsed AI scores:`, scores);
             
-            // Validate that all required keys are present
+            // Validate that all required keys are present and are numbers
             const requiredKeys = ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'];
-            const missingKeys = requiredKeys.filter(key => !(key in scores));
+            const missingKeys = requiredKeys.filter(key => !(key in scores) || typeof scores[key] !== 'number');
             
             if (missingKeys.length > 0) {
-              console.warn(`⚠️ Missing keys in AI response: ${missingKeys.join(', ')}`);
-              throw new Error(`Missing required keys: ${missingKeys.join(', ')}`);
+              console.warn(`⚠️ Missing or invalid keys in AI response: ${missingKeys.join(', ')}`);
+              throw new Error(`Missing or invalid required keys: ${missingKeys.join(', ')}`);
             }
             
-            analysisMethod = 'AI-powered (Gemini 2.5 Flash)';
+            // Ensure all scores are within valid range
+            for (const key of requiredKeys) {
+              if (scores[key] < 1 || scores[key] > 100) {
+                console.warn(`⚠️ Score ${key} out of range: ${scores[key]}`);
+                scores[key] = Math.max(1, Math.min(100, scores[key]));
+              }
+            }
+            
+            analysisMethod = 'AI-powered (Gemini 1.5 Flash)';
           } else {
             console.warn('❌ No JSON found in AI response, response was:', aiAnalysis);
-            throw new Error('No JSON found in AI response');
+            throw new Error('No valid JSON found in AI response');
           }
         } catch (parseError) {
           console.error('❌ Failed to parse AI analysis:', parseError);
@@ -337,7 +403,7 @@ Return only a JSON object with these exact keys:
         console.log(`🔄 Falling back to rule-based analysis`);
         
         scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
-        analysisMethod = `Rule-based (AI failed: ${aiError.message})`;
+        analysisMethod = `Rule-based (AI failed: ${aiError.message.substring(0, 100)})`;
       }
     } else {
       console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based analysis`);
@@ -396,7 +462,7 @@ Return only a JSON object with these exact keys:
       details: error.message,
       type: error.name || 'Unknown Error',
       suggestion: error.message.includes('GEMINI_API_KEY') 
-        ? 'Please configure the GEMINI_API_KEY environment variable in your Supabase project settings under Project Settings > Environment Variables.'
+        ? 'Please configure the GEMINI_API_KEY environment variable in your Supabase project settings under Project Settings > Edge Functions > Environment Variables.'
         : 'Please check the logs for more details and try again.',
       success: false
     };
