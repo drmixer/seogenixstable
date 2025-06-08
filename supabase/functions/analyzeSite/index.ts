@@ -39,42 +39,64 @@ function extractMetadata(html: string): { title: string; description: string; ke
 async function callGeminiAPI(prompt: string): Promise<string> {
   const apiKey = Deno.env.get('GEMINI_API_KEY');
   
+  console.log(`🔑 API Key check: ${apiKey ? `Present (${apiKey.substring(0, 10)}...)` : 'NOT FOUND'}`);
+  
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY environment variable is not set. Please configure this in your Supabase project settings.');
   }
 
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{
-          text: prompt
-        }]
-      }],
-      generationConfig: {
-        temperature: 0.3,
-        topK: 40,
-        topP: 0.95,
-        maxOutputTokens: 1024,
-      }
-    })
-  });
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+  console.log(`🌐 Making request to: ${apiUrl.replace(apiKey, 'HIDDEN_KEY')}`);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+  const requestBody = {
+    contents: [{
+      parts: [{
+        text: prompt
+      }]
+    }],
+    generationConfig: {
+      temperature: 0.3,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 1024,
+    }
+  };
+
+  console.log(`📤 Request body prepared, prompt length: ${prompt.length} characters`);
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    console.log(`📥 Response status: ${response.status} ${response.statusText}`);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`❌ Gemini API error response: ${errorText}`);
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log(`✅ Gemini API response received, candidates: ${data.candidates?.length || 0}`);
+    
+    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+      console.error(`❌ Invalid Gemini API response structure:`, JSON.stringify(data, null, 2));
+      throw new Error('Invalid response from Gemini API');
+    }
+
+    const responseText = data.candidates[0].content.parts[0].text;
+    console.log(`📝 Gemini response length: ${responseText.length} characters`);
+    
+    return responseText;
+  } catch (fetchError) {
+    console.error(`❌ Fetch error calling Gemini API:`, fetchError);
+    throw fetchError;
   }
-
-  const data = await response.json();
-  
-  if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-    throw new Error('Invalid response from Gemini API');
-  }
-
-  return data.candidates[0].content.parts[0].text;
 }
 
 // Helper function to generate fallback scores based on basic analysis
@@ -216,9 +238,12 @@ serve(async (req) => {
 
     // Check if Gemini API key is available
     const apiKey = Deno.env.get('GEMINI_API_KEY');
+    console.log(`🔑 Environment check - GEMINI_API_KEY: ${apiKey ? 'PRESENT' : 'MISSING'}`);
     
     if (apiKey) {
       try {
+        console.log(`🤖 Attempting AI analysis with Gemini API`);
+        
         // Prepare the prompt for AI analysis
         const analysisPrompt = `Analyze this website for AI visibility and provide scores from 1-100 for each category:
 
@@ -249,7 +274,7 @@ Return only a JSON object with these exact keys:
         // Call Gemini API to analyze the site
         const aiAnalysis = await callGeminiAPI(analysisPrompt);
         
-        console.log(`✅ Gemini API returned analysis`);
+        console.log(`✅ Gemini API returned analysis: ${aiAnalysis.substring(0, 200)}...`);
 
         // Parse the AI response to extract scores
         try {
@@ -257,19 +282,23 @@ Return only a JSON object with these exact keys:
           const jsonMatch = aiAnalysis.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
             scores = JSON.parse(jsonMatch[0]);
+            console.log(`✅ Successfully parsed AI scores:`, scores);
+            analysisMethod = 'AI-powered (Gemini 2.5 Flash)';
           } else {
+            console.warn('❌ No JSON found in AI response, response was:', aiAnalysis);
             throw new Error('No JSON found in AI response');
           }
         } catch (parseError) {
-          console.warn('Failed to parse AI analysis, using fallback scores');
+          console.error('❌ Failed to parse AI analysis:', parseError);
+          console.log('Raw AI response:', aiAnalysis);
           throw parseError; // This will trigger the fallback below
         }
       } catch (aiError) {
-        console.warn(`⚠️ AI analysis failed: ${aiError.message}`);
+        console.error(`❌ AI analysis failed with error:`, aiError);
         console.log(`🔄 Falling back to rule-based analysis`);
         
         scores = generateFallbackScores(metadata, hasStructuredData, websiteContent.length);
-        analysisMethod = 'Rule-based (AI unavailable)';
+        analysisMethod = `Rule-based (AI failed: ${aiError.message})`;
       }
     } else {
       console.log(`⚠️ GEMINI_API_KEY not configured, using rule-based analysis`);
@@ -282,6 +311,7 @@ Return only a JSON object with these exact keys:
     ['ai_visibility_score', 'schema_score', 'semantic_score', 'citation_score', 'technical_seo_score'].forEach(key => {
       let score = scores[key];
       if (typeof score !== 'number' || isNaN(score) || score < 1 || score > 100) {
+        console.warn(`⚠️ Invalid score for ${key}: ${score}, using random fallback`);
         score = Math.floor(Math.random() * 40) + 60; // Random score between 60-100
       }
       validatedScores[key] = Math.floor(Math.max(1, Math.min(100, score))); // Ensure integer between 1-100
