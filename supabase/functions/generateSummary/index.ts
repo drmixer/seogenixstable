@@ -106,9 +106,23 @@ serve(async (req) => {
 
 async function generateSummaryContent(url: string, summaryType: string): Promise<string> {
   try {
-    const domain = new URL(url).hostname
-    const siteName = domain.replace('www.', '').split('.')[0]
-    const companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
+    let domain: string
+    let siteName: string
+    let companyName: string
+    
+    // Safely parse the URL with error handling
+    try {
+      const parsedUrl = new URL(url)
+      domain = parsedUrl.hostname
+      siteName = domain.replace('www.', '').split('.')[0]
+      companyName = siteName.charAt(0).toUpperCase() + siteName.slice(1)
+    } catch (urlError) {
+      console.warn('⚠️ Invalid URL provided, using fallback values:', urlError.message)
+      // Use fallback values when URL is invalid
+      domain = 'example.com'
+      siteName = 'example'
+      companyName = 'Example Company'
+    }
     
     // Check for Gemini API key
     const geminiApiKey = Deno.env.get('GEMINI_API_KEY')
