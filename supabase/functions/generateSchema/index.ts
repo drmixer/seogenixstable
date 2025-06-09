@@ -299,6 +299,41 @@ function generateFallbackSchema(url: string, schemaType: string, metadata: any):
   }
 }
 
+// Helper function to safely extract error information
+function extractErrorInfo(error: any): { message: string; type: string; details?: string } {
+  let message = 'Unknown error occurred';
+  let type = 'UnknownError';
+  let details = undefined;
+
+  try {
+    if (error) {
+      // Handle different error types
+      if (typeof error === 'string') {
+        message = error;
+        type = 'StringError';
+      } else if (error instanceof Error) {
+        message = error.message || 'Error instance without message';
+        type = error.name || 'Error';
+        details = error.stack;
+      } else if (typeof error === 'object') {
+        // Handle object-like errors
+        message = error.message || error.msg || error.error || JSON.stringify(error);
+        type = error.name || error.type || error.code || 'ObjectError';
+        details = error.stack || error.details;
+      } else {
+        message = String(error);
+        type = typeof error;
+      }
+    }
+  } catch (extractError) {
+    console.error('Error while extracting error info:', extractError);
+    message = 'Error occurred while processing error information';
+    type = 'ErrorExtractionError';
+  }
+
+  return { message, type, details };
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -314,10 +349,12 @@ serve(async (req) => {
       requestData = await req.json();
     } catch (parseError) {
       console.error('❌ Failed to parse request body:', parseError);
+      const errorInfo = extractErrorInfo(parseError);
       return new Response(
         JSON.stringify({ 
           error: 'Invalid request body - must be valid JSON',
-          details: parseError.message
+          details: errorInfo.message,
+          type: errorInfo.type
         }),
         { 
           status: 400, 
@@ -333,7 +370,8 @@ serve(async (req) => {
       console.error('❌ Missing required parameters:', { url: !!url, schemaType: !!schemaType });
       return new Response(
         JSON.stringify({ 
-          error: 'Missing required parameters: url or schemaType' 
+          error: 'Missing required parameters: url or schemaType',
+          type: 'ValidationError'
         }),
         { 
           status: 400, 
@@ -374,8 +412,9 @@ serve(async (req) => {
       console.log(`📋 Metadata - Title: "${metadata.title}", Description: "${metadata.description}"`);
       
     } catch (fetchError) {
-      console.warn(`⚠️ Failed to fetch website content: ${fetchError.message}`);
-      console.log(`🔄 Falling back to URL-based analysis`);
+      console.warn(`⚠️ Failed to fetch website content:`, fetchError);
+      const errorInfo = extractErrorInfo(fetchError);
+      console.log(`🔄 Falling back to URL-based analysis due to: ${errorInfo.message}`);
       
       // Fallback: analyze based on URL and domain
       const domain = new URL(url).hostname;
@@ -451,10 +490,11 @@ IMPORTANT: Return ONLY the JSON-LD schema markup, starting with { and ending wit
         }
       } catch (aiError) {
         console.error(`❌ AI schema generation failed with error:`, aiError);
-        console.log(`🔄 Falling back to template-based schema generation`);
+        const errorInfo = extractErrorInfo(aiError);
+        console.log(`🔄 Falling back to template-based schema generation due to: ${errorInfo.message}`);
         
         generatedSchema = generateFallbackSchema(url, schemaType, metadata);
-        analysisMethod = `Template-based (AI failed: ${aiError.message})`;
+        analysisMethod = `Template-based (AI failed: ${errorInfo.message})`;
       }
     } else {
       console.log(`⚠️ GEMINI_API_KEY not configured, using template-based schema generation`);
@@ -485,12 +525,15 @@ IMPORTANT: Return ONLY the JSON-LD schema markup, starting with { and ending wit
   } catch (error) {
     console.error('❌ Error in generateSchema function:', error);
     
+    // Extract error information safely
+    const errorInfo = extractErrorInfo(error);
+    
     // Return detailed error information
     const errorResponse = {
       error: 'Failed to generate schema',
-      details: error.message,
-      type: error.name || 'Unknown Error',
-      suggestion: error.message.includes('GEMINI_API_KEY') 
+      details: errorInfo.message,
+      type: errorInfo.type,
+      suggestion: errorInfo.message.includes('GEMINI_API_KEY') 
         ? 'Please configure the GEMINI_API_KEY environment variable in your Supabase project settings under Project Settings > Environment Variables.'
         : 'Please check the logs for more details and try again.',
       success: false

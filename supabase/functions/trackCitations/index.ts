@@ -315,6 +315,41 @@ async function searchReddit(query: string): Promise<any[]> {
   }
 }
 
+// Helper function to safely extract error information
+function extractErrorInfo(error: any): { message: string; type: string; details?: string } {
+  let message = 'Unknown error occurred';
+  let type = 'UnknownError';
+  let details = undefined;
+
+  try {
+    if (error) {
+      // Handle different error types
+      if (typeof error === 'string') {
+        message = error;
+        type = 'StringError';
+      } else if (error instanceof Error) {
+        message = error.message || 'Error instance without message';
+        type = error.name || 'Error';
+        details = error.stack;
+      } else if (typeof error === 'object') {
+        // Handle object-like errors
+        message = error.message || error.msg || error.error || JSON.stringify(error);
+        type = error.name || error.type || error.code || 'ObjectError';
+        details = error.stack || error.details;
+      } else {
+        message = String(error);
+        type = typeof error;
+      }
+    }
+  } catch (extractError) {
+    console.error('Error while extracting error info:', extractError);
+    message = 'Error occurred while processing error information';
+    type = 'ErrorExtractionError';
+  }
+
+  return { message, type, details };
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -328,7 +363,8 @@ serve(async (req) => {
     if (!siteId || !url) {
       return new Response(
         JSON.stringify({ 
-          error: 'Missing required parameters: siteId or url' 
+          error: 'Missing required parameters: siteId or url',
+          type: 'ValidationError'
         }),
         { 
           status: 400, 
@@ -392,7 +428,8 @@ serve(async (req) => {
         }
       } catch (googleError) {
         console.error('❌ Google search failed:', googleError);
-        apiErrors.push(`Google: ${googleError.message}`);
+        const errorInfo = extractErrorInfo(googleError);
+        apiErrors.push(`Google: ${errorInfo.message}`);
       }
 
       // News search
@@ -411,7 +448,8 @@ serve(async (req) => {
         }
       } catch (newsError) {
         console.error('❌ News search failed:', newsError);
-        apiErrors.push(`News: ${newsError.message}`);
+        const errorInfo = extractErrorInfo(newsError);
+        apiErrors.push(`News: ${errorInfo.message}`);
       }
 
       // Reddit search
@@ -430,7 +468,8 @@ serve(async (req) => {
         }
       } catch (redditError) {
         console.error('❌ Reddit search failed:', redditError);
-        apiErrors.push(`Reddit: ${redditError.message}`);
+        const errorInfo = extractErrorInfo(redditError);
+        apiErrors.push(`Reddit: ${errorInfo.message}`);
       }
 
       // Small delay between searches to be respectful
@@ -514,6 +553,8 @@ Focus on what you can reasonably infer about the business based on the domain na
       console.log(`🤖 Generated AI assistant response`);
     } catch (error) {
       console.warn('Failed to generate AI response, using fallback');
+      const errorInfo = extractErrorInfo(error);
+      console.log(`Using fallback response due to: ${errorInfo.message}`);
       assistantResponse = `${capitalizedSiteName} appears to be a professional service provider based on their website at ${domain}. They offer various business solutions and services to help clients achieve their goals. For specific information about their offerings, I'd recommend visiting their website directly.`;
     }
 
@@ -544,12 +585,15 @@ Focus on what you can reasonably infer about the business based on the domain na
   } catch (error) {
     console.error('❌ Error in trackCitations function:', error);
     
+    // Extract error information safely
+    const errorInfo = extractErrorInfo(error);
+    
     // Return detailed error information
     return new Response(
       JSON.stringify({ 
         error: 'Failed to track citations',
-        details: error.message,
-        type: error.name || 'Unknown Error'
+        details: errorInfo.message,
+        type: errorInfo.type
       }),
       {
         status: 500,

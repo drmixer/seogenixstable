@@ -77,6 +77,41 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   return data.candidates[0].content.parts[0].text;
 }
 
+// Helper function to safely extract error information
+function extractErrorInfo(error: any): { message: string; type: string; details?: string } {
+  let message = 'Unknown error occurred';
+  let type = 'UnknownError';
+  let details = undefined;
+
+  try {
+    if (error) {
+      // Handle different error types
+      if (typeof error === 'string') {
+        message = error;
+        type = 'StringError';
+      } else if (error instanceof Error) {
+        message = error.message || 'Error instance without message';
+        type = error.name || 'Error';
+        details = error.stack;
+      } else if (typeof error === 'object') {
+        // Handle object-like errors
+        message = error.message || error.msg || error.error || JSON.stringify(error);
+        type = error.name || error.type || error.code || 'ObjectError';
+        details = error.stack || error.details;
+      } else {
+        message = String(error);
+        type = typeof error;
+      }
+    }
+  } catch (extractError) {
+    console.error('Error while extracting error info:', extractError);
+    message = 'Error occurred while processing error information';
+    type = 'ErrorExtractionError';
+  }
+
+  return { message, type, details };
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -90,7 +125,8 @@ serve(async (req) => {
     if (!siteId || !url || !summaryType) {
       return new Response(
         JSON.stringify({ 
-          error: 'Missing required parameters: siteId, url, or summaryType' 
+          error: 'Missing required parameters: siteId, url, or summaryType',
+          type: 'ValidationError'
         }),
         { 
           status: 400, 
@@ -132,8 +168,9 @@ serve(async (req) => {
       console.log(`📋 Metadata - Title: "${metadata.title}", Description: "${metadata.description}"`);
       
     } catch (fetchError) {
-      console.warn(`⚠️ Failed to fetch website content: ${fetchError.message}`);
-      console.log(`🔄 Falling back to URL-based analysis`);
+      console.warn(`⚠️ Failed to fetch website content:`, fetchError);
+      const errorInfo = extractErrorInfo(fetchError);
+      console.log(`🔄 Falling back to URL-based analysis due to: ${errorInfo.message}`);
       
       // Fallback: analyze based on URL and domain
       const domain = new URL(url).hostname;
@@ -326,12 +363,15 @@ Please create a detailed summary that covers the main purpose, services, and key
   } catch (error) {
     console.error('❌ Error in generateSummary function:', error);
     
+    // Extract error information safely
+    const errorInfo = extractErrorInfo(error);
+    
     // Return detailed error information
     return new Response(
       JSON.stringify({ 
         error: 'Failed to generate summary',
-        details: error.message,
-        type: error.name || 'Unknown Error'
+        details: errorInfo.message,
+        type: errorInfo.type
       }),
       {
         status: 500,

@@ -356,6 +356,41 @@ function generateFallbackSuggestions(content: string): any {
   };
 }
 
+// Helper function to safely extract error information
+function extractErrorInfo(error: any): { message: string; type: string; details?: string } {
+  let message = 'Unknown error occurred';
+  let type = 'UnknownError';
+  let details = undefined;
+
+  try {
+    if (error) {
+      // Handle different error types
+      if (typeof error === 'string') {
+        message = error;
+        type = 'StringError';
+      } else if (error instanceof Error) {
+        message = error.message || 'Error instance without message';
+        type = error.name || 'Error';
+        details = error.stack;
+      } else if (typeof error === 'object') {
+        // Handle object-like errors
+        message = error.message || error.msg || error.error || JSON.stringify(error);
+        type = error.name || error.type || error.code || 'ObjectError';
+        details = error.stack || error.details;
+      } else {
+        message = String(error);
+        type = typeof error;
+      }
+    }
+  } catch (extractError) {
+    console.error('Error while extracting error info:', extractError);
+    message = 'Error occurred while processing error information';
+    type = 'ErrorExtractionError';
+  }
+
+  return { message, type, details };
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -369,7 +404,8 @@ serve(async (req) => {
     if (!content) {
       return new Response(
         JSON.stringify({ 
-          error: 'Missing required parameter: content' 
+          error: 'Missing required parameter: content',
+          type: 'ValidationError'
         }),
         { 
           status: 400, 
@@ -445,10 +481,11 @@ CRITICAL: Return ONLY the JSON object above, no explanatory text, no markdown fo
         }
       } catch (aiError) {
         console.error(`❌ AI prompt generation failed with error:`, aiError);
-        console.log(`🔄 Falling back to template-based suggestions`);
+        const errorInfo = extractErrorInfo(aiError);
+        console.log(`🔄 Falling back to template-based suggestions due to: ${errorInfo.message}`);
         
         suggestions = generateFallbackSuggestions(content);
-        analysisMethod = `Template-based (AI failed: ${aiError.message})`;
+        analysisMethod = `Template-based (AI failed: ${errorInfo.message})`;
       }
     } else {
       console.log(`⚠️ GEMINI_API_KEY not configured, using template-based suggestions`);
@@ -479,12 +516,15 @@ CRITICAL: Return ONLY the JSON object above, no explanatory text, no markdown fo
   } catch (error) {
     console.error('❌ Error in generatePrompts function:', error);
     
+    // Extract error information safely
+    const errorInfo = extractErrorInfo(error);
+    
     // Return detailed error information
     return new Response(
       JSON.stringify({ 
         error: 'Failed to generate prompts',
-        details: error.message,
-        type: error.name || 'Unknown Error'
+        details: errorInfo.message,
+        type: errorInfo.type
       }),
       {
         status: 500,

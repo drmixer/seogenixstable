@@ -47,6 +47,41 @@ async function callGeminiAPI(prompt: string): Promise<string> {
   return data.candidates[0].content.parts[0].text;
 }
 
+// Helper function to safely extract error information
+function extractErrorInfo(error: any): { message: string; type: string; details?: string } {
+  let message = 'Unknown error occurred';
+  let type = 'UnknownError';
+  let details = undefined;
+
+  try {
+    if (error) {
+      // Handle different error types
+      if (typeof error === 'string') {
+        message = error;
+        type = 'StringError';
+      } else if (error instanceof Error) {
+        message = error.message || 'Error instance without message';
+        type = error.name || 'Error';
+        details = error.stack;
+      } else if (typeof error === 'object') {
+        // Handle object-like errors
+        message = error.message || error.msg || error.error || JSON.stringify(error);
+        type = error.name || error.type || error.code || 'ObjectError';
+        details = error.stack || error.details;
+      } else {
+        message = String(error);
+        type = typeof error;
+      }
+    }
+  } catch (extractError) {
+    console.error('Error while extracting error info:', extractError);
+    message = 'Error occurred while processing error information';
+    type = 'ErrorExtractionError';
+  }
+
+  return { message, type, details };
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -60,7 +95,8 @@ serve(async (req) => {
     if (!topic || !contentType) {
       return new Response(
         JSON.stringify({ 
-          error: 'Missing required parameters: topic or contentType' 
+          error: 'Missing required parameters: topic or contentType',
+          type: 'ValidationError'
         }),
         { 
           status: 400, 
@@ -254,12 +290,15 @@ Focus on providing real value and actionable information.`;
   } catch (error) {
     console.error('❌ Error in generateContent function:', error);
     
+    // Extract error information safely
+    const errorInfo = extractErrorInfo(error);
+    
     // Return detailed error information
     return new Response(
       JSON.stringify({ 
         error: 'Failed to generate content',
-        details: error.message,
-        type: error.name || 'Unknown Error'
+        details: errorInfo.message,
+        type: errorInfo.type
       }),
       {
         status: 500,
