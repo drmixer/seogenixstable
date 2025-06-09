@@ -56,6 +56,79 @@ export interface Entity {
   created_at: string;
 }
 
+// Helper function to check if Supabase is properly configured
+const isSupabaseConfigured = () => {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  
+  return supabaseUrl && 
+         supabaseAnonKey && 
+         supabaseUrl !== 'your-supabase-url' && 
+         supabaseAnonKey !== 'your-supabase-anon-key' &&
+         supabaseUrl !== '' &&
+         supabaseAnonKey !== '' &&
+         supabaseUrl.startsWith('http') &&
+         supabaseAnonKey.length > 20;
+};
+
+// Helper function to safely make edge function calls with timeout and error handling
+const safeEdgeFunctionCall = async (functionName: string, payload: any, timeoutMs: number = 30000) => {
+  console.log(`🚀 Calling edge function: ${functionName}`);
+  console.log(`📤 Payload:`, payload);
+  
+  // Check Supabase configuration first
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase is not properly configured. Please check your environment variables.');
+  }
+
+  // Create a timeout promise
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`Edge function ${functionName} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  // Create the actual function call promise
+  const functionCallPromise = supabase.functions.invoke(functionName, {
+    body: payload,
+    headers: {
+      'Content-Type': 'application/json',
+    }
+  });
+
+  try {
+    // Race between the function call and timeout
+    const result = await Promise.race([functionCallPromise, timeoutPromise]);
+    
+    console.log(`📥 Edge function ${functionName} response:`, result);
+    
+    if (result.error) {
+      console.error(`❌ Edge function ${functionName} returned error:`, result.error);
+      throw new Error(`Edge function failed: ${result.error.message || result.error}`);
+    }
+
+    if (!result.data) {
+      console.error(`❌ Edge function ${functionName} returned no data`);
+      throw new Error(`Edge function ${functionName} returned no data`);
+    }
+
+    return result;
+  } catch (error) {
+    console.error(`❌ Edge function ${functionName} failed:`, error);
+    
+    // Provide more specific error messages
+    if (error.message.includes('Failed to fetch')) {
+      throw new Error(`Network error: Unable to connect to Supabase edge functions. Please check your internet connection and Supabase configuration.`);
+    } else if (error.message.includes('timeout')) {
+      throw new Error(`Request timeout: The ${functionName} function took too long to respond. Please try again.`);
+    } else if (error.message.includes('404')) {
+      throw new Error(`Function not found: The ${functionName} edge function is not deployed or accessible.`);
+    } else if (error.message.includes('401') || error.message.includes('403')) {
+      throw new Error(`Authentication error: Please check your Supabase API keys and permissions.`);
+    } else {
+      throw error;
+    }
+  }
+};
+
 // Site API
 export const siteApi = {
   async getSites(): Promise<Site[]> {
@@ -149,29 +222,12 @@ export const summaryApi = {
 
       console.log('📤 Request body:', requestBody);
 
-      // Call the edge function - removed headers to prevent JSON serialization conflicts
-      const { data, error } = await supabase.functions.invoke('generateSummary', {
-        body: requestBody
-      });
-
-      console.log('📥 Edge function response:', { data, error });
+      // Call the edge function with improved error handling
+      const { data, error } = await safeEdgeFunctionCall('generateSummary', requestBody);
 
       if (error) {
         console.error('❌ Edge function error:', error);
-        
-        // Try to extract more detailed error information
-        let errorMessage = 'Edge function failed';
-        if (error.message) {
-          errorMessage += `: ${error.message}`;
-        }
-        if (error.details) {
-          errorMessage += ` (${error.details})`;
-        }
-        if (error.hint) {
-          errorMessage += ` - ${error.hint}`;
-        }
-        
-        throw new Error(errorMessage);
+        throw new Error(`Edge function failed: ${error.message || error}`);
       }
 
       if (!data) {
@@ -253,16 +309,16 @@ export const auditApi = {
 
       console.log('🚀 Calling analyzeSite edge function with:', { siteId, url, user_id: user.id });
 
-      // Call the analyzeSite edge function
-      const { data, error } = await supabase.functions.invoke('analyzeSite', {
-        body: { siteId, url, user_id: user.id }
+      // Call the analyzeSite edge function with improved error handling
+      const { data, error } = await safeEdgeFunctionCall('analyzeSite', {
+        siteId,
+        url,
+        user_id: user.id
       });
-
-      console.log('📥 analyzeSite response:', { data, error });
 
       if (error) {
         console.error('❌ analyzeSite edge function error:', error);
-        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+        throw new Error(`Edge function failed: ${error.message || error}`);
       }
 
       if (!data) {
@@ -306,8 +362,10 @@ export const auditApi = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      const { data, error } = await supabase.functions.invoke('analyzeSite', {
-        body: { siteId, url, user_id: user.id }
+      const { data, error } = await safeEdgeFunctionCall('analyzeSite', {
+        siteId,
+        url,
+        user_id: user.id
       });
 
       if (error) throw error;
@@ -339,16 +397,16 @@ export const citationApi = {
 
       console.log('🚀 Calling trackCitations edge function with:', { siteId, url });
 
-      // Call the trackCitations edge function
-      const { data, error } = await supabase.functions.invoke('trackCitations', {
-        body: { siteId, url, user_id: user.id }
+      // Call the trackCitations edge function with improved error handling
+      const { data, error } = await safeEdgeFunctionCall('trackCitations', {
+        siteId,
+        url,
+        user_id: user.id
       });
-
-      console.log('📥 trackCitations response:', { data, error });
 
       if (error) {
         console.error('❌ trackCitations edge function error:', error);
-        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+        throw new Error(`Edge function failed: ${error.message || error}`);
       }
 
       if (!data) {
@@ -408,16 +466,15 @@ export const schemaApi = {
         throw new Error('Missing required parameters: url or schemaType');
       }
 
-      // Call the generateSchema edge function
-      const { data, error } = await supabase.functions.invoke('generateSchema', {
-        body: { url: url.trim(), schemaType: schemaType.trim() }
+      // Call the generateSchema edge function with improved error handling
+      const { data, error } = await safeEdgeFunctionCall('generateSchema', {
+        url: url.trim(),
+        schemaType: schemaType.trim()
       });
-
-      console.log('📥 generateSchema response:', { data, error });
 
       if (error) {
         console.error('❌ generateSchema edge function error:', error);
-        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+        throw new Error(`Edge function failed: ${error.message || error}`);
       }
 
       if (!data) {
@@ -464,16 +521,16 @@ export const entityApi = {
 
       console.log('🚀 Calling analyzeEntityCoverage edge function with:', { siteId, url });
 
-      // Call the analyzeEntityCoverage edge function
-      const { data, error } = await supabase.functions.invoke('analyzeEntityCoverage', {
-        body: { siteId, url, user_id: user.id }
+      // Call the analyzeEntityCoverage edge function with improved error handling
+      const { data, error } = await safeEdgeFunctionCall('analyzeEntityCoverage', {
+        siteId,
+        url,
+        user_id: user.id
       });
-
-      console.log('📥 analyzeEntityCoverage response:', { data, error });
 
       if (error) {
         console.error('❌ analyzeEntityCoverage edge function error:', error);
-        throw new Error(`Edge function failed: ${error.message || 'Unknown error'}`);
+        throw new Error(`Edge function failed: ${error.message || error}`);
       }
 
       if (!data) {
@@ -523,8 +580,14 @@ export const contentApi = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      const { data, error } = await supabase.functions.invoke('generateContent', {
-        body: { topic, contentType, industry, targetAudience, tone, length, siteUrl }
+      const { data, error } = await safeEdgeFunctionCall('generateContent', {
+        topic,
+        contentType,
+        industry,
+        targetAudience,
+        tone,
+        length,
+        siteUrl
       });
 
       if (error) throw error;
@@ -543,8 +606,12 @@ export const promptApi = {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      const { data, error } = await supabase.functions.invoke('generatePrompts', {
-        body: { content, industry, targetAudience, contentType, siteUrl }
+      const { data, error } = await safeEdgeFunctionCall('generatePrompts', {
+        content,
+        industry,
+        targetAudience,
+        contentType,
+        siteUrl
       });
 
       if (error) throw error;
